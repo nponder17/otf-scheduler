@@ -9,26 +9,24 @@ from app.routers.schedule import router as schedule_router
 
 app = FastAPI(title="Scheduler API")
 
-# Comma-separated list, e.g.:
-# CORS_ORIGINS="http://localhost:8081,http://127.0.0.1:8081,https://otf-scheduler-web.onrender.com"
+# Read allowed origins from environment
 cors_origins = os.getenv("CORS_ORIGINS", "")
 allow_origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
 
-# Safe fallback for local dev if env var not set
+# Safe fallback for local dev
 if not allow_origins:
-  allow_origins = [
-    "http://localhost:8081",
-    "http://127.0.0.1:8081",
-    "http://localhost:8082",
-    "http://127.0.0.1:8082",
-  ]
+    allow_origins = [
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:5173",
+    ]
 
 app.add_middleware(
-  CORSMiddleware,
-  allow_origins=allow_origins,
-  allow_credentials=True,
-  allow_methods=["*"],
-  allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(employee_form_router, prefix="/employees", tags=["employee-form"])
@@ -38,4 +36,4 @@ app.include_router(schedule_router, prefix="/schedules", tags=["schedules"])
 
 @app.get("/health")
 def health():
-  return {"status": "ok"}
+    return {"status": "ok"}

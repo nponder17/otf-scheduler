@@ -1,0 +1,10 @@
+scheduler-app/
+  apps/
+    web/              # Next.js
+    mobile/           # Expo
+    api/              # FastAPI
+  packages/
+    shared/           # shared TS types/validators
+  infra/
+    db/               # sql migrations / schema
+  README.md

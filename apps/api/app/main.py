@@ -37,3 +37,8 @@ app.include_router(schedule_router, prefix="/schedules", tags=["schedules"])
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/")
+def root():
+    return {"ok": True, "service": "otf-scheduler-api", "docs": "/docs", "health": "/health"}
+

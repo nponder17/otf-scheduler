@@ -1,4 +1,3 @@
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,25 +8,24 @@ from app.routers.schedule import router as schedule_router
 
 app = FastAPI(title="Scheduler API")
 
-# Read allowed origins from environment
-cors_origins = os.getenv("CORS_ORIGINS", "")
-allow_origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+ALLOWED_ORIGINS = [
+    # local dev
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+    "http://localhost:19006",
+    "http://127.0.0.1:19006",
 
-# Safe fallback for local dev
-if not allow_origins:
-    allow_origins = [
-        "https://otf-scheduler-mobile.onrender.com",
-        "http://localhost:8081",
-        "http://127.0.0.1:8081",
-        "http://localhost:5173",
-    ]
+    # Render deployments (yours)
+    "https://otf-scheduler-mobile.onrender.com",
+    "https://otf-scheduler-web.onrender.com",
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],  # includes ngrok-skip-browser-warning
 )
 
 app.include_router(employee_form_router, prefix="/employees", tags=["employee-form"])
@@ -38,8 +36,3 @@ app.include_router(schedule_router, prefix="/schedules", tags=["schedules"])
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-@app.get("/")
-def root():
-    return {"ok": True, "service": "otf-scheduler-api", "docs": "/docs", "health": "/health"}
-

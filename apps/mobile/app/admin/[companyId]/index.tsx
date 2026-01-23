@@ -9,8 +9,12 @@ import { apiGet, apiPost, getApiBase } from "../../../lib/api";
  * - Local fallback: http://localhost:8081
  * - Ngrok: set EXPO_PUBLIC_WEB_BASE=https://xxxx.ngrok.app
  */
-const WEB_BASE =
-  (process.env.EXPO_PUBLIC_WEB_BASE as string) || "http://localhost:8081";
+const WEB_BASE_RAW =
+  (process.env.EXPO_PUBLIC_WEB_BASE as string) || "https://otf-scheduler-web.onrender.com";
+
+// normalize: remove trailing slash
+const WEB_BASE = WEB_BASE_RAW.replace(/\/+$/, "");
+
 
 type Company = {
   company_id: string;

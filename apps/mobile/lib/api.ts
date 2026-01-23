@@ -1,10 +1,7 @@
 const LOCAL_API = "http://127.0.0.1:8000";
 
-// Optional: set this in expo start:
-// EXPO_PUBLIC_API_BASE="https://xxxx.ngrok-free.dev"
 export function getApiBase() {
-  // @ts-ignore
-  const env = (process?.env?.EXPO_PUBLIC_API_BASE || "").trim();
+  const env = (process.env.EXPO_PUBLIC_API_BASE ?? "").trim();
   return env || LOCAL_API;
 }
 

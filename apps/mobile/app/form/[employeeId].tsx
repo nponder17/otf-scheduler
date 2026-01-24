@@ -278,10 +278,9 @@ function DayChips({ day, setDay }: { day: Day; setDay: (d: Day) => void }) {
 type Step = "form" | "review";
 
 export default function EmployeeFormScreen() {
-  const { employeeId } = useLocalSearchParams<{ employeeId: string }>();
+  const { employeeId, companyId } = useLocalSearchParams<{ employeeId: string; companyId?: string }>();
   const employeeIdStr = useMemo(() => String(employeeId || ""), [employeeId]);
-
-  const [companyId, setCompanyId] = useState<string>("");
+  const companyIdStr = useMemo(() => String(companyId || ""), [companyId]);
 
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoBust, setLogoBust] = useState<number>(Date.now());
@@ -316,10 +315,10 @@ export default function EmployeeFormScreen() {
   }, [employeeIdStr]);
 
   const logoUri = useMemo(() => {
-    if (!companyId) return "";
-    // ✅ matches your CompanyAdmin dashboard logic
-    return `${API_BASE}/admin/companies/${companyId}/logo?bust=${logoBust}`;
-  }, [companyId, logoBust]);
+    if (!companyIdStr || companyIdStr === "undefined") return "";
+    return `${API_BASE}/admin/companies/${companyIdStr}/logo?bust=${logoBust}`;
+  }, [companyIdStr, logoBust]);
+  
 
   const [step, setStep] = useState<Step>("form");
 

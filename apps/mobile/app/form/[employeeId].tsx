@@ -10,7 +10,7 @@ import {
   Image,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { apiPost, getApiBase } from "../../lib/api";
+import { apiGet, apiPost, getApiBase } from "../../lib/api";
 
 // Native-only time picker (won't break web)
 const DateTimePicker =
@@ -53,6 +53,9 @@ type DateRangeBlock = {
   end_date: string; // YYYY-MM-DD
   note?: string | null;
 };
+
+// ✅ minimal employee meta needed for logo
+type EmployeeMeta = { employee_id: string; company_id: string };
 
 function notify(title: string, message: string) {
   if (Platform.OS === "web") {
@@ -217,7 +220,7 @@ function ChipGroup<T extends string>({
 }) {
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-      {options.map((opt, i) => {
+      {options.map((opt) => {
         const selected = opt.value === value;
         return (
           <Pressable
@@ -278,6 +281,8 @@ export default function EmployeeFormScreen() {
   const { employeeId } = useLocalSearchParams<{ employeeId: string }>();
   const employeeIdStr = useMemo(() => String(employeeId || ""), [employeeId]);
 
+  const [companyId, setCompanyId] = useState<string>("");
+
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoBust, setLogoBust] = useState<number>(Date.now());
 
@@ -286,10 +291,35 @@ export default function EmployeeFormScreen() {
     setLogoBust(Date.now());
   }, [employeeIdStr]);
 
+  // ✅ Load employee -> company_id so we can use the company logo endpoint
+  useEffect(() => {
+    if (!employeeIdStr || employeeIdStr === "undefined") return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // IMPORTANT:
+        // This assumes your API has GET /employees/{employee_id} that returns company_id
+        // If your API uses a different endpoint, change this line.
+        const meta = await apiGet<EmployeeMeta>(`/employees/${employeeIdStr}`);
+        if (!cancelled) setCompanyId(meta.company_id);
+      } catch (e) {
+        console.log("Could not load employee meta for logo:", e);
+        if (!cancelled) setCompanyId("");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [employeeIdStr]);
+
   const logoUri = useMemo(() => {
-    if (!employeeIdStr || employeeIdStr === "undefined") return "";
-    return `${API_BASE}/employees/${employeeIdStr}/logo?bust=${logoBust}`;
-  }, [employeeIdStr, logoBust]);
+    if (!companyId) return "";
+    // ✅ matches your CompanyAdmin dashboard logic
+    return `${API_BASE}/admin/companies/${companyId}/logo?bust=${logoBust}`;
+  }, [companyId, logoBust]);
 
   const [step, setStep] = useState<Step>("form");
 
@@ -1026,3 +1056,4 @@ export default function EmployeeFormScreen() {
     </ScrollView>
   );
 }
+

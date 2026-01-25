@@ -131,9 +131,13 @@ export default function AddEmployee() {
     setFieldErrors({});
 
     try {
+      const token = localStorage.getItem("auth_token");
       const res = await fetch(`${API_BASE}/admin/companies/${companyIdStr}/employees`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(payload),
       });
 

@@ -749,6 +749,67 @@ export default function SystemAdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* Edit Employee Modal */}
+        {showEditEmployee && editingEmployee && (
+          <div style={styles.modal} onClick={() => setShowEditEmployee(false)}>
+            <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalTitle}>Edit Employee</div>
+
+              <div>
+                <div style={styles.label}>Name</div>
+                <input
+                  type="text"
+                  value={editEmployeeName}
+                  onChange={(e) => setEditEmployeeName(e.target.value)}
+                  placeholder="Enter employee name"
+                  style={styles.input}
+                />
+              </div>
+
+              <div>
+                <div style={styles.label}>Email</div>
+                <input
+                  type="email"
+                  value={editEmployeeEmail}
+                  onChange={(e) => setEditEmployeeEmail(e.target.value)}
+                  placeholder="employee@example.com"
+                  style={styles.input}
+                />
+              </div>
+
+              <div>
+                <div style={styles.label}>Phone (optional)</div>
+                <input
+                  type="tel"
+                  value={editEmployeePhone}
+                  onChange={(e) => setEditEmployeePhone(e.target.value)}
+                  placeholder="Enter phone number"
+                  style={styles.input}
+                />
+              </div>
+
+              <div>
+                <div style={styles.label}>Hire Date (optional)</div>
+                <input
+                  type="date"
+                  value={editEmployeeHireDate}
+                  onChange={(e) => setEditEmployeeHireDate(e.target.value)}
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={styles.modalButtons}>
+                <button onClick={() => setShowEditEmployee(false)} style={styles.cancelButton}>
+                  Cancel
+                </button>
+                <button onClick={handleUpdateEmployee} disabled={loading} style={styles.submitButton}>
+                  Update
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

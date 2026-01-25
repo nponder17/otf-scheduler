@@ -224,7 +224,15 @@ export default function ManagerSchedule() {
   // Full implementation would require converting all 1653 lines of web code to React Native
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: "#0b0f14" }} contentContainerStyle={{ padding: 18 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#0b0f14" }}
+      contentContainerStyle={{
+        padding: 18,
+        maxWidth: Platform.OS === "web" ? "600px" : "100%",
+        alignSelf: Platform.OS === "web" ? "center" : "stretch",
+        width: "100%",
+      }}
+    >
       <Text style={{ fontSize: 34, fontWeight: "800", color: "#e9eaec", marginBottom: 10 }}>
         Manager Schedule
       </Text>

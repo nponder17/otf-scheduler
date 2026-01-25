@@ -232,7 +232,15 @@ export default function AddEmployeeScreen() {
     const formPath = formPathFromUrl(formUrl);
 
     return (
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 20,
+          gap: 12,
+          maxWidth: Platform.OS === "web" ? "600px" : "100%",
+          alignSelf: Platform.OS === "web" ? "center" : "stretch",
+          width: "100%",
+        }}
+      >
         <Text style={{ fontSize: 22, fontWeight: "700" }}>Employee Created</Text>
         <Text style={{ opacity: 0.7 }}>
           {created.name} • {created.email}
@@ -317,7 +325,15 @@ export default function AddEmployeeScreen() {
   const showHireErr = touched.hireDate && !!fieldErrors.hireDate;
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: 20,
+        gap: 12,
+        maxWidth: Platform.OS === "web" ? "600px" : "100%",
+        alignSelf: Platform.OS === "web" ? "center" : "stretch",
+        width: "100%",
+      }}
+    >
       <Text style={{ fontSize: 22, fontWeight: "700" }}>Add Employee</Text>
       <Text style={{ opacity: 0.65 }}>Company: {companyIdStr}</Text>
 

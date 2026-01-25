@@ -26,7 +26,15 @@ export default function AdminIndex() {
   }, []);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: 20,
+        gap: 12,
+        maxWidth: Platform.OS === "web" ? "600px" : "100%",
+        alignSelf: Platform.OS === "web" ? "center" : "stretch",
+        width: "100%",
+      }}
+    >
       <Text style={{ fontSize: 22, fontWeight: "700" }}>Admin</Text>
 
       {!!err && <Text style={{ color: "crimson" }}>{err}</Text>}

@@ -189,7 +189,15 @@ export default function CompanyAdmin() {
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: 20,
+        gap: 12,
+        maxWidth: Platform.OS === "web" ? "600px" : "100%",
+        alignSelf: Platform.OS === "web" ? "center" : "stretch",
+        width: "100%",
+      }}
+    >
       <View style={{ alignItems: "center", gap: 8, marginBottom: 6 }}>
         {showLogo ? (
           <Image

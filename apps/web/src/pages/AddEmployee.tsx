@@ -3,8 +3,6 @@ import React, { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
-const WEB_BASE_RAW = import.meta.env.VITE_WEB_BASE || window.location.origin;
-const WEB_BASE = WEB_BASE_RAW.replace(/\/+$/, "");
 
 type EmployeeCreatePayload = {
   name: string;
@@ -173,7 +171,7 @@ export default function AddEmployee() {
   const styles: Record<string, React.CSSProperties> = {
     page: {
       minHeight: "100vh",
-      background: "#0b0c0e",
+      background: "#0b0f14",
       color: "#e9eaec",
       padding: 20,
     },

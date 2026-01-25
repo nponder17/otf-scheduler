@@ -20,6 +20,7 @@ from app.models.employee import Employee
 from app.models.employee_role import EmployeeRole
 
 from app.schemas.employees import EmployeeOut
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -379,3 +380,63 @@ def clear_company_schedule_artifacts(company_id: UUID, db: Session = Depends(get
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to clear schedule artifacts: {str(e)}")
+
+
+@router.post("/migrate/add-password-hash")
+def run_password_hash_migration(db: Session = Depends(get_db)):
+    """
+    Run migration to add password_hash column to employees table.
+    This endpoint can be called once to add the column.
+    Safe to call multiple times (uses IF NOT EXISTS).
+    """
+    try:
+        # Check if column already exists
+        check_result = db.execute(
+            text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'employees' AND column_name = 'password_hash'
+            """)
+        ).fetchone()
+
+        if check_result:
+            return {
+                "message": "Column 'password_hash' already exists",
+                "status": "skipped"
+            }
+
+        # Add the column
+        db.execute(text("ALTER TABLE employees ADD COLUMN password_hash VARCHAR"))
+        db.commit()
+
+        # Verify it was added
+        verify_result = db.execute(
+            text("""
+                SELECT column_name, data_type, is_nullable 
+                FROM information_schema.columns 
+                WHERE table_name = 'employees' AND column_name = 'password_hash'
+            """)
+        ).fetchone()
+
+        if verify_result:
+            return {
+                "message": "Migration successful",
+                "status": "completed",
+                "column": {
+                    "name": verify_result[0],
+                    "type": verify_result[1],
+                    "nullable": verify_result[2] == "YES"
+                }
+            }
+        else:
+            raise Exception("Column was not created")
+
+    except Exception as e:
+        db.rollback()
+        # If error is "column already exists", that's okay
+        if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+            return {
+                "message": "Column already exists",
+                "status": "skipped"
+            }
+        raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")

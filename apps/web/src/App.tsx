@@ -10,7 +10,7 @@ import EmployeeSchedule from "./pages/EmployeeSchedule";
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/manager/schedule" replace />} />
+      <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/manager/schedule" element={<ManagerSchedule />} />
 
       {/* Employee form route */}

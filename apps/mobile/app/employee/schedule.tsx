@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { View, Text, ScrollView, Pressable, Alert, Platform } from "react-native";
-import { useRouter } from "expo-router";
+import { View, Text, ScrollView, Pressable, Alert, Platform, Linking } from "react-native";
+import { useRouter, Link } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiGet } from "../../lib/api";
 

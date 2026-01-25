@@ -266,7 +266,7 @@ export default function AddEmployeeScreen() {
                   disabled={!formPath}
                   onPress={() => {
                     if (!formPath) return;
-                    router.push(formPath);
+                    router.push(formPath as any);
                   }}
                 />
               </View>
@@ -302,7 +302,7 @@ export default function AddEmployeeScreen() {
           <Button
             label="Back to dashboard"
             variant="primary"
-            onPress={() => router.replace(`/admin/${companyIdStr}`)}
+            onPress={() => router.replace(`/admin/${companyIdStr}` as any)}
           />
         </View>
 
@@ -412,7 +412,7 @@ export default function AddEmployeeScreen() {
           label="Cancel"
           variant="secondary"
           disabled={submitting}
-          onPress={() => router.replace(`/admin/${companyIdStr}`)}
+          onPress={() => router.replace(`/admin/${companyIdStr}` as any)}
         />
         <Button
           label={submitting ? "Creating..." : "Create"}

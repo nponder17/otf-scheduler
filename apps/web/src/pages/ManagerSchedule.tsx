@@ -597,7 +597,7 @@ export default function ManagerSchedule() {
   const styles: Record<string, React.CSSProperties> = {
     page: {
       minHeight: "100vh",
-      background: "#0b0c0e",
+      background: "#0b0f14",
       color: "#e9eaec",
       padding: 18,
       overflowX: "hidden",
@@ -1058,6 +1058,25 @@ export default function ManagerSchedule() {
             <strong>Run ID:</strong> {runId}
           </div>
         )}
+      </div>
+
+      {/* Navigation */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <a
+          href="/admin"
+          style={{
+            padding: "10px 16px",
+            borderRadius: 16,
+            border: "1px solid rgba(255,255,255,0.14)",
+            background: "rgba(255,255,255,0.08)",
+            color: "#e9eaec",
+            fontWeight: 700,
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ← Admin Dashboard
+        </a>
       </div>
 
       {/* Controls */}

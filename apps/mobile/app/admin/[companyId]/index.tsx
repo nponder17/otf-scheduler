@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useLocalSearchParams } from "expo-router";
-import { View, Text, Pressable, ScrollView, Platform, Image } from "react-native";
+import { Link, useLocalSearchParams, useRouter } from "expo-router";
+import { View, Text, Pressable, ScrollView, Platform, Image, Linking } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { apiGet, apiPost, getApiBase } from "../../../lib/api";
 
@@ -33,6 +33,7 @@ type Employee = {
 };
 
 export default function CompanyAdmin() {
+  const router = useRouter();
   const { companyId } = useLocalSearchParams<{ companyId: string }>();
   const companyIdStr = useMemo(() => String(companyId || ""), [companyId]);
 
@@ -240,6 +241,27 @@ export default function CompanyAdmin() {
           </Pressable>
         </Link>
 
+        {Platform.OS === "web" ? (
+          <Pressable
+            onPress={() => {
+              // @ts-ignore - window.location is available on web
+              if (typeof window !== "undefined" && window.location) {
+                // @ts-ignore
+                window.location.href = "/manager/schedule";
+              }
+            }}
+            disabled={!isValidCompanyId}
+            style={{
+              padding: 12,
+              borderRadius: 10,
+              backgroundColor: !isValidCompanyId ? "#6b7280" : "#2563eb",
+              opacity: !isValidCompanyId ? 0.7 : 1,
+            }}
+          >
+            <Text style={{ color: "white", fontWeight: "700" }}>Schedule Generator</Text>
+          </Pressable>
+        ) : null}
+
         <Pressable
           onPress={() => {
             setLogoFailed(false);
@@ -301,7 +323,7 @@ export default function CompanyAdmin() {
         <View style={{ gap: 10 }}>
           {employees.map((e) => {
             const companyIdEncoded = encodeURIComponent(companyIdStr);
-            const formPath = `/form/${e.employee_id}?companyId=${companyIdEncoded}`;
+            const formPath = `/form/${e.employee_id}?companyId=${companyIdEncoded}` as const;
             const formUrl = `${WEB_BASE}${formPath}`;
 
             return (
@@ -336,7 +358,7 @@ export default function CompanyAdmin() {
                     <Text style={{ color: "white", fontWeight: "700" }}>Copy link</Text>
                   </Pressable>
 
-                  <Link href={formPath} asChild>
+                  <Link href={formPath as any} asChild>
                     <Pressable
                       style={{
                         paddingVertical: 10,

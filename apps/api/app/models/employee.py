@@ -20,6 +20,7 @@ class Employee(Base):
     name = Column(String, nullable=False)
     phone = Column(String, nullable=True)
     email = Column(String, nullable=False)
+    password_hash = Column(String, nullable=True)  # NULL for employees without login yet
 
     hire_date = Column(Date, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)

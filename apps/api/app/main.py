@@ -5,6 +5,8 @@ from app.routers.employee_form import router as employee_form_router
 from app.routers.companies import router as companies_router
 from app.routers.admin import router as admin_router
 from app.routers.schedule import router as schedule_router
+from app.routers.auth import router as auth_router
+from app.routers.employee_schedule import router as employee_schedule_router
 
 app = FastAPI(title="Scheduler API")
 
@@ -32,6 +34,8 @@ app.include_router(employee_form_router, prefix="/employees", tags=["employee-fo
 app.include_router(companies_router, prefix="/companies", tags=["companies"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(schedule_router, prefix="/schedules", tags=["schedules"])
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(employee_schedule_router, prefix="/employee", tags=["employee-schedule"])
 
 @app.get("/health")
 def health():

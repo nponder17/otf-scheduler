@@ -6,6 +6,7 @@ from uuid import UUID
 from pathlib import Path
 
 from app.core.database import get_db
+from app.routers.auth import get_current_manager, get_current_system_admin
 from app.schemas.admin import (
     CompanyCreate,
     RoleCreate,
@@ -18,9 +19,12 @@ from app.models.company import Company
 from app.models.role import Role
 from app.models.employee import Employee
 from app.models.employee_role import EmployeeRole
+from app.models.manager import Manager
+from app.models.system_admin import SystemAdmin
 
 from app.schemas.employees import EmployeeOut
 from sqlalchemy import text
+from typing import Union
 
 router = APIRouter()
 
@@ -31,9 +35,23 @@ FORM_BASE_URL = "http://localhost:8081"
 LOGOS_DIR = (Path(__file__).resolve().parents[3] / "mobile" / "assets" / "logos").resolve()
 
 
+# Helper to get current user (manager or system admin) and their company_id
+def get_current_user_and_company(
+    manager: Manager = Depends(get_current_manager),
+    db: Session = Depends(get_db),
+) -> tuple[Union[Manager, SystemAdmin], UUID]:
+    """Get current manager and their company_id. For system admins, company_id can be None."""
+    return (manager, manager.company_id)
+
+
 # --- Companies ---
 @router.post("/companies")
-def create_company(payload: CompanyCreate, db: Session = Depends(get_db)):
+def create_company(
+    payload: CompanyCreate,
+    db: Session = Depends(get_db),
+    current_admin: SystemAdmin = Depends(get_current_system_admin),
+):
+    """Create a new company (system admin only)."""
     c = Company(name=payload.name, timezone=payload.timezone)
     db.add(c)
     db.commit()
@@ -42,7 +60,21 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/companies")
-def list_companies(db: Session = Depends(get_db)):
+def list_companies(
+    db: Session = Depends(get_db),
+    current_manager: Manager = Depends(get_current_manager),
+):
+    """List companies. Managers see only their company, system admins see all."""
+    # For managers, return only their company
+    return [db.get(Company, current_manager.company_id)]
+
+
+@router.get("/companies/all")
+def list_all_companies(
+    db: Session = Depends(get_db),
+    current_admin: SystemAdmin = Depends(get_current_system_admin),
+):
+    """List all companies (system admin only)."""
     return db.execute(select(Company)).scalars().all()
 
 
@@ -170,7 +202,17 @@ def list_roles(company_id: UUID, db: Session = Depends(get_db)):
 
 # --- Employees ---
 @router.post("/companies/{company_id}/employees", response_model=EmployeeOut)
-def create_employee(company_id: UUID, payload: EmployeeCreate, db: Session = Depends(get_db)):
+def create_employee(
+    company_id: UUID,
+    payload: EmployeeCreate,
+    db: Session = Depends(get_db),
+    current_manager: Manager = Depends(get_current_manager),
+):
+    """Create employee. Managers can only add to their own company."""
+    # Managers can only add employees to their own company
+    if current_manager.company_id != company_id:
+        raise HTTPException(status_code=403, detail="You can only add employees to your own company")
+    
     company = db.get(Company, company_id)
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
@@ -200,7 +242,16 @@ def create_employee(company_id: UUID, payload: EmployeeCreate, db: Session = Dep
 
 
 @router.get("/companies/{company_id}/employees", response_model=list[EmployeeOut])
-def list_employees(company_id: UUID, db: Session = Depends(get_db)):
+def list_employees(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    current_manager: Manager = Depends(get_current_manager),
+):
+    """List employees. Managers can only see their own company's employees."""
+    # Managers can only see their own company's employees
+    if current_manager.company_id != company_id:
+        raise HTTPException(status_code=403, detail="You can only view employees from your own company")
+    
     company = db.get(Company, company_id)
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")

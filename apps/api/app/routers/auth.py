@@ -12,6 +12,8 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.config import settings
 from app.models.employee import Employee
+from app.models.manager import Manager
+from app.models.system_admin import SystemAdmin
 
 router = APIRouter()
 security = HTTPBearer()
@@ -45,21 +47,35 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
+def decode_token(token: str) -> dict:
+    """Decode JWT token and return payload."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+        )
+
+
 def get_current_employee(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ) -> Employee:
     """Get the current authenticated employee from JWT token."""
     token = credentials.credentials
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        employee_id: str = payload.get("sub")
-        if employee_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials",
-            )
-    except JWTError:
+    payload = decode_token(token)
+    
+    role = payload.get("role")
+    if role != "employee":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint requires employee role",
+        )
+    
+    employee_id: str = payload.get("sub")
+    if employee_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
@@ -74,6 +90,68 @@ def get_current_employee(
     return employee
 
 
+def get_current_manager(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> Manager:
+    """Get the current authenticated manager from JWT token."""
+    token = credentials.credentials
+    payload = decode_token(token)
+    
+    role = payload.get("role")
+    if role != "manager":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint requires manager role",
+        )
+    
+    manager_id: str = payload.get("sub")
+    if manager_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+        )
+
+    manager = db.get(Manager, UUID(manager_id))
+    if manager is None or not manager.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Manager not found or inactive",
+        )
+    return manager
+
+
+def get_current_system_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> SystemAdmin:
+    """Get the current authenticated system admin from JWT token."""
+    token = credentials.credentials
+    payload = decode_token(token)
+    
+    role = payload.get("role")
+    if role != "system_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint requires system admin role",
+        )
+    
+    admin_id: str = payload.get("sub")
+    if admin_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+        )
+
+    admin = db.get(SystemAdmin, UUID(admin_id))
+    if admin is None or not admin.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="System admin not found or inactive",
+        )
+    return admin
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
@@ -82,14 +160,15 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    employee_id: str
+    role: str  # "employee", "manager", or "system_admin"
+    user_id: str  # employee_id, manager_id, or admin_id
     name: str
     email: str
-    company_id: str
+    company_id: Optional[str] = None  # Only for employees and managers
 
 
-@router.post("/login", response_model=LoginResponse)
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+@router.post("/login/employee")
+def login_employee(req: LoginRequest, db: Session = Depends(get_db)):
     """Login endpoint for employees."""
     # Find employee by email
     stmt = select(Employee).where(Employee.email == req.email.lower())
@@ -121,27 +200,160 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid email or password",
         )
 
-    # Create access token
-    access_token = create_access_token(data={"sub": str(employee.employee_id)})
+    # Create access token with role
+    access_token = create_access_token(data={
+        "sub": str(employee.employee_id),
+        "role": "employee"
+    })
 
     return LoginResponse(
         access_token=access_token,
-        employee_id=str(employee.employee_id),
+        role="employee",
+        user_id=str(employee.employee_id),
         name=employee.name,
         email=employee.email,
         company_id=str(employee.company_id),
     )
 
 
+@router.post("/login/manager")
+def login_manager(req: LoginRequest, db: Session = Depends(get_db)):
+    """Login endpoint for managers."""
+    # Find manager by email
+    stmt = select(Manager).where(Manager.email == req.email.lower())
+    manager = db.execute(stmt).scalar_one_or_none()
+
+    if not manager:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    if not manager.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Manager account is inactive",
+        )
+
+    # Check if manager has a password set
+    if not manager.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Password not set. Please contact your administrator.",
+        )
+
+    # Verify password
+    if not verify_password(req.password, manager.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    # Create access token with role
+    access_token = create_access_token(data={
+        "sub": str(manager.manager_id),
+        "role": "manager"
+    })
+
+    return LoginResponse(
+        access_token=access_token,
+        role="manager",
+        user_id=str(manager.manager_id),
+        name=manager.name,
+        email=manager.email,
+        company_id=str(manager.company_id),
+    )
+
+
+@router.post("/login/system-admin")
+def login_system_admin(req: LoginRequest, db: Session = Depends(get_db)):
+    """Login endpoint for system admins."""
+    # Find system admin by email
+    stmt = select(SystemAdmin).where(SystemAdmin.email == req.email.lower())
+    admin = db.execute(stmt).scalar_one_or_none()
+
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    if not admin.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="System admin account is inactive",
+        )
+
+    # Verify password
+    if not verify_password(req.password, admin.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    # Create access token with role
+    access_token = create_access_token(data={
+        "sub": str(admin.admin_id),
+        "role": "system_admin"
+    })
+
+    return LoginResponse(
+        access_token=access_token,
+        role="system_admin",
+        user_id=str(admin.admin_id),
+        name=admin.name,
+        email=admin.email,
+        company_id=None,
+    )
+
+
 @router.get("/me")
-def get_current_user_info(current_employee: Employee = Depends(get_current_employee)):
-    """Get current authenticated employee info."""
-    return {
-        "employee_id": str(current_employee.employee_id),
-        "name": current_employee.name,
-        "email": current_employee.email,
-        "company_id": str(current_employee.company_id),
-    }
+def get_current_user_info(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    """Get current authenticated user info (works for any role)."""
+    token = credentials.credentials
+    payload = decode_token(token)
+    
+    role = payload.get("role")
+    user_id = payload.get("sub")
+    
+    if role == "employee":
+        employee = db.get(Employee, UUID(user_id))
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee not found")
+        return {
+            "role": "employee",
+            "user_id": str(employee.employee_id),
+            "name": employee.name,
+            "email": employee.email,
+            "company_id": str(employee.company_id),
+        }
+    elif role == "manager":
+        manager = db.get(Manager, UUID(user_id))
+        if not manager:
+            raise HTTPException(status_code=404, detail="Manager not found")
+        return {
+            "role": "manager",
+            "user_id": str(manager.manager_id),
+            "name": manager.name,
+            "email": manager.email,
+            "company_id": str(manager.company_id),
+        }
+    elif role == "system_admin":
+        admin = db.get(SystemAdmin, UUID(user_id))
+        if not admin:
+            raise HTTPException(status_code=404, detail="System admin not found")
+        return {
+            "role": "system_admin",
+            "user_id": str(admin.admin_id),
+            "name": admin.name,
+            "email": admin.email,
+            "company_id": None,
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Unknown role")
 
 
 @router.post("/set-password")

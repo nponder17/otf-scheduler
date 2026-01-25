@@ -50,6 +50,7 @@ export default function EmployeeSchedule() {
   const [teamSchedule, setTeamSchedule] = useState<any>(null);
   const [employeeId, setEmployeeId] = useState<string>("");
   const [companyId, setCompanyId] = useState<string>("");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const router = useRouter();
 
   const monthStart = useMemo(() => iso(firstOfMonth(month)), [month]);
@@ -66,6 +67,52 @@ export default function EmployeeSchedule() {
       loadTeamSchedule();
     }
   }, [monthStart, monthEnd, viewMode]);
+
+  // Handle logout navigation - separate from Alert callback to avoid React error #418
+  useEffect(() => {
+    if (isLoggingOut) {
+      const performLogout = async () => {
+        console.log("🔄 Logout effect triggered");
+        try {
+          // Clear all stored data
+          console.log("🧹 Clearing AsyncStorage...");
+          await AsyncStorage.multiRemove([
+            "auth_token",
+            "employee_id",
+            "employee_name",
+            "company_id",
+          ]);
+          console.log("✅ AsyncStorage cleared");
+          
+          // Reset state
+          setSchedule(null);
+          setTeamSchedule(null);
+          setEmployeeId("");
+          setCompanyId("");
+          
+          // Wait a moment for state to clear
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Navigate to login
+          console.log("🧭 Navigating to /login...");
+          try {
+            router.replace("/login" as any);
+            console.log("✅ Navigation successful");
+          } catch (e) {
+            console.error("❌ Navigation error:", e);
+            router.push("/login" as any);
+          }
+          
+          setIsLoggingOut(false);
+        } catch (error) {
+          console.error("❌ Logout error:", error);
+          setIsLoggingOut(false);
+        }
+      };
+      
+      performLogout();
+    }
+  }, [isLoggingOut, router]);
 
 
   async function checkAuth() {

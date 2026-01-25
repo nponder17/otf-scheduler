@@ -43,9 +43,14 @@ export default function CompanyAdmin() {
     try {
       setErr("");
 
+      const token = localStorage.getItem("auth_token");
+      const headers: HeadersInit = {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
       const [cRes, empsRes] = await Promise.all([
-        fetch(`${API_BASE}/admin/companies/${companyIdStr}`),
-        fetch(`${API_BASE}/admin/companies/${companyIdStr}/employees`),
+        fetch(`${API_BASE}/admin/companies/${companyIdStr}`, { headers }),
+        fetch(`${API_BASE}/admin/companies/${companyIdStr}/employees`, { headers }),
       ]);
 
       if (!cRes.ok) throw new Error("Failed to load company");
@@ -119,9 +124,13 @@ export default function CompanyAdmin() {
       setClearingForms(true);
       setErr("");
 
+      const token = localStorage.getItem("auth_token");
       const res = await fetch(`${API_BASE}/admin/companies/${companyIdStr}/forms/clear`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({}),
       });
 
@@ -161,9 +170,13 @@ export default function CompanyAdmin() {
       setClearingSchedule(true);
       setErr("");
 
+      const token = localStorage.getItem("auth_token");
       const res = await fetch(`${API_BASE}/admin/companies/${companyIdStr}/schedule/clear`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({}),
       });
 

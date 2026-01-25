@@ -18,7 +18,12 @@ export default function AdminIndex() {
     (async () => {
       try {
         setErr("");
-        const res = await fetch(`${API_BASE}/admin/companies`);
+        const token = localStorage.getItem("auth_token");
+        const res = await fetch(`${API_BASE}/admin/companies`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
         if (!res.ok) throw new Error("Failed to load companies");
         const data = await res.json();
         setCompanies(Array.isArray(data) ? data : []);

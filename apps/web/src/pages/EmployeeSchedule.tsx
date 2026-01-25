@@ -64,6 +64,8 @@ export default function EmployeeSchedule() {
   const [month, setMonth] = useState(() => new Date());
   const [viewMode, setViewMode] = useState<"my-schedule" | "team-schedule">("my-schedule");
   const [teamSchedule, setTeamSchedule] = useState<any>(null);
+  const [employeeId, setEmployeeId] = useState<string>("");
+  const [companyId, setCompanyId] = useState<string>("");
   const navigate = useNavigate();
 
   const monthStart = useMemo(() => iso(firstOfMonth(month)), [month]);
@@ -83,10 +85,25 @@ export default function EmployeeSchedule() {
 
   async function checkAuth() {
     const token = localStorage.getItem("auth_token");
+    const storedEmployeeId = localStorage.getItem("employee_id");
+    const storedCompanyId = localStorage.getItem("company_id");
+    
     if (!token) {
       navigate("/login");
       return;
     }
+    
+    if (storedEmployeeId) setEmployeeId(storedEmployeeId);
+    if (storedCompanyId) setCompanyId(storedCompanyId);
+  }
+
+  function handleOpenForm() {
+    if (!employeeId || !companyId) {
+      alert("Unable to open form. Please try logging in again.");
+      return;
+    }
+    const formPath = `/form/${employeeId}?companyId=${encodeURIComponent(companyId)}`;
+    navigate(formPath);
   }
 
   async function loadMySchedule() {

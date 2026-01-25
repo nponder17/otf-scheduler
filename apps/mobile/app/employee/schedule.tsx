@@ -48,6 +48,8 @@ export default function EmployeeSchedule() {
   const [month, setMonth] = useState(() => new Date());
   const [viewMode, setViewMode] = useState<"my-schedule" | "team-schedule">("my-schedule");
   const [teamSchedule, setTeamSchedule] = useState<any>(null);
+  const [employeeId, setEmployeeId] = useState<string>("");
+  const [companyId, setCompanyId] = useState<string>("");
   const router = useRouter();
 
   const monthStart = useMemo(() => iso(firstOfMonth(month)), [month]);
@@ -67,10 +69,16 @@ export default function EmployeeSchedule() {
 
   async function checkAuth() {
     const token = await AsyncStorage.getItem("auth_token");
+    const storedEmployeeId = await AsyncStorage.getItem("employee_id");
+    const storedCompanyId = await AsyncStorage.getItem("company_id");
+    
     if (!token) {
       router.replace("/login" as any);
       return;
     }
+    
+    if (storedEmployeeId) setEmployeeId(storedEmployeeId);
+    if (storedCompanyId) setCompanyId(storedCompanyId);
   }
 
   async function loadMySchedule() {
@@ -116,14 +124,27 @@ export default function EmployeeSchedule() {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          await AsyncStorage.removeItem("auth_token");
-          await AsyncStorage.removeItem("employee_id");
-          await AsyncStorage.removeItem("employee_name");
-          await AsyncStorage.removeItem("company_id");
+          // Clear all stored data
+          await AsyncStorage.multiRemove([
+            "auth_token",
+            "employee_id",
+            "employee_name",
+            "company_id",
+          ]);
+          // Force navigation to login
           router.replace("/login" as any);
         },
       },
     ]);
+  }
+
+  function handleOpenForm() {
+    if (!employeeId || !companyId) {
+      Alert.alert("Error", "Unable to open form. Please try logging in again.");
+      return;
+    }
+    const formPath = `/form/${employeeId}?companyId=${encodeURIComponent(companyId)}`;
+    router.push(formPath as any);
   }
 
   function prevMonth() {

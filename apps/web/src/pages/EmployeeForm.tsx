@@ -965,7 +965,8 @@ export default function EmployeeForm() {
         </>
       )}
 
-      <div style={{ height: 24 }} />
+        <div style={{ height: 24 }} />
+      </div>
     </div>
   );
 }

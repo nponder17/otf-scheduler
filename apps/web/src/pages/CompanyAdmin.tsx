@@ -447,6 +447,7 @@ export default function CompanyAdmin() {
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -437,6 +437,7 @@ export default function AddEmployee() {
       </div>
 
       {!!status && <div style={styles.status}>{status}</div>}
+      </div>
     </div>
   );
 }

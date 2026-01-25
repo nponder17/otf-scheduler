@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { View, Text, TextInput, Pressable, Alert, ScrollView, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { apiPost } from "../lib/api";
@@ -9,6 +9,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const passwordInputRef = useRef<TextInput>(null);
 
   async function handleLogin() {
     if (!email || !password) {

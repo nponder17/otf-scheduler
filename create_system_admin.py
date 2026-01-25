@@ -13,6 +13,7 @@ Example:
 import sys
 import os
 from pathlib import Path
+from passlib.context import CryptContext
 
 # Add the apps/api directory to the path so we can import from app
 api_dir = Path(__file__).parent / "apps" / "api"
@@ -21,8 +22,14 @@ sys.path.insert(0, str(api_dir))
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models.system_admin import SystemAdmin
-from app.routers.auth import get_password_hash
 from app.core.config import settings
+
+# Password hashing context (same as in auth.py)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password: str) -> str:
+    """Hash a password."""
+    return pwd_context.hash(password)
 
 def create_system_admin(email: str, password: str, name: str):
     """Create a system admin account in the database."""

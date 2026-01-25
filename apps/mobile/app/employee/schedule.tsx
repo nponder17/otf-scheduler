@@ -119,13 +119,17 @@ export default function EmployeeSchedule() {
   }
 
   async function handleLogout() {
+    console.log("🔴 Logout button clicked");
     Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
+      { text: "Cancel", style: "cancel", onPress: () => console.log("❌ Logout cancelled") },
       {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
+          console.log("✅ Logout confirmed, starting logout process...");
+          
           try {
+            console.log("🧹 Clearing AsyncStorage...");
             // Clear all stored data
             await AsyncStorage.multiRemove([
               "auth_token",
@@ -133,28 +137,63 @@ export default function EmployeeSchedule() {
               "employee_name",
               "company_id",
             ]);
+            console.log("✅ AsyncStorage cleared");
+            
+            // Verify it's cleared
+            const token = await AsyncStorage.getItem("auth_token");
+            console.log("🔍 Token after clear:", token ? "STILL EXISTS" : "CLEARED");
           } catch (error) {
-            console.error("Error clearing storage:", error);
+            console.error("❌ Error clearing storage:", error);
           }
           
           // Reset state
+          console.log("🔄 Resetting component state...");
           setSchedule(null);
           setTeamSchedule(null);
           setEmployeeId("");
           setCompanyId("");
           
           // Wait a moment for state to clear
-          await new Promise(resolve => setTimeout(resolve, 50));
+          console.log("⏳ Waiting 100ms before navigation...");
+          await new Promise(resolve => setTimeout(resolve, 100));
           
-          // Navigate to login - use requestAnimationFrame to ensure it happens after render
-          requestAnimationFrame(() => {
+          // Try navigation with multiple methods
+          console.log("🧭 Attempting navigation to /login...");
+          
+          // Method 1: Try replace
+          try {
+            console.log("📍 Trying router.replace('/login')...");
+            router.replace("/login" as any);
+            console.log("✅ router.replace called successfully");
+            
+            // Check if navigation worked after a delay
+            setTimeout(() => {
+              console.log("🔍 Checking navigation status after 500ms...");
+            }, 500);
+          } catch (e) {
+            console.error("❌ router.replace failed:", e);
+            
+            // Method 2: Try push
             try {
-              router.replace("/login" as any);
-            } catch (e) {
-              console.error("Navigation error, trying push:", e);
+              console.log("📍 Trying router.push('/login')...");
               router.push("/login" as any);
+              console.log("✅ router.push called successfully");
+            } catch (e2) {
+              console.error("❌ router.push also failed:", e2);
+              
+              // Method 3: Try with requestAnimationFrame
+              console.log("📍 Trying with requestAnimationFrame...");
+              requestAnimationFrame(() => {
+                try {
+                  router.replace("/login" as any);
+                  console.log("✅ Navigation with requestAnimationFrame called");
+                } catch (e3) {
+                  console.error("❌ All navigation methods failed:", e3);
+                  Alert.alert("Navigation Error", "Please manually navigate to login page");
+                }
+              });
             }
-          });
+          }
         },
       },
     ]);

@@ -20,7 +20,7 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const res = await fetch(`${API_BASE}/auth/login/employee`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -38,7 +38,7 @@ export default function Login() {
 
       // Store token and user info
       localStorage.setItem("auth_token", response.access_token);
-      localStorage.setItem("employee_id", response.employee_id);
+      localStorage.setItem("employee_id", response.user_id);
       localStorage.setItem("employee_name", response.name);
       localStorage.setItem("company_id", response.company_id);
 

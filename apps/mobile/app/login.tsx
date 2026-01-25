@@ -24,18 +24,19 @@ export default function Login() {
     try {
       const response = await apiPost<{
         access_token: string;
-        employee_id: string;
+        role: string;
+        user_id: string;
         name: string;
         email: string;
         company_id: string;
-      }>("/auth/login", {
+      }>("/auth/login/employee", {
         email: email.toLowerCase().trim(),
         password,
       });
 
       // Store token and user info
       await AsyncStorage.setItem("auth_token", response.access_token);
-      await AsyncStorage.setItem("employee_id", response.employee_id);
+      await AsyncStorage.setItem("employee_id", response.user_id);
       await AsyncStorage.setItem("employee_name", response.name);
       await AsyncStorage.setItem("company_id", response.company_id);
 

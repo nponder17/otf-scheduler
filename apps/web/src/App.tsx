@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import ManagerSchedule from "./pages/ManagerSchedule";
 import EmployeeForm from "./pages/EmployeeForm";
 import AdminIndex from "./pages/AdminIndex";

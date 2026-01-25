@@ -198,7 +198,7 @@ export default function SystemAdminDashboard() {
     setEditEmployeeName(employee.name);
     setEditEmployeeEmail(employee.email);
     setEditEmployeePhone(employee.phone || "");
-    setEditEmployeeHireDate("");
+    setEditEmployeeHireDate(employee.hire_date ? employee.hire_date.split("T")[0] : "");
     setShowEditEmployee(true);
   }
 

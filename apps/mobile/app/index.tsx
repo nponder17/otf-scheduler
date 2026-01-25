@@ -30,6 +30,34 @@ export default function Home() {
         </Text>
       </Pressable>
 
+      <Pressable
+        onPress={() => router.push("/manager/login" as any)}
+        style={{
+          padding: 14,
+          backgroundColor: "#2563eb",
+          borderRadius: 12,
+          marginBottom: 12,
+        }}
+      >
+        <Text style={{ color: "white", fontWeight: "700", textAlign: "center", fontSize: 16 }}>
+          Manager Login
+        </Text>
+      </Pressable>
+
+      <Pressable
+        onPress={() => router.push("/system-admin/login" as any)}
+        style={{
+          padding: 14,
+          backgroundColor: "#7c3aed",
+          borderRadius: 12,
+          marginBottom: 12,
+        }}
+      >
+        <Text style={{ color: "white", fontWeight: "700", textAlign: "center", fontSize: 16 }}>
+          System Admin Login
+        </Text>
+      </Pressable>
+
       <Link href="/admin" asChild>
         <Pressable
           style={{

@@ -543,10 +543,11 @@ export default function EmployeeFormScreen() {
 
   return (
     <ScrollView
+      style={{ flex: 1, backgroundColor: "#0b0f14" }}
       contentContainerStyle={{
         padding: 16,
-        backgroundColor: "#0b0f14",
-        flexGrow: 1,
+        width: "100%",
+        maxWidth: "100%",
       }}
     >
       {!missingCompanyId ? (
@@ -666,9 +667,82 @@ export default function EmployeeFormScreen() {
       ) : (
         <>
           <Card title="Review your answers">
-            <Text style={{ color: "#9aa4b2" }}>
+            <Text style={{ color: "#9aa4b2", marginBottom: 12 }}>
               If everything looks correct, tap Submit.
             </Text>
+
+            {availability.length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>Availability:</Text>
+                {availability.map((b, idx) => (
+                  <Text key={idx} style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                    {dayLabel(b.day_of_week)} {b.start_time}–{b.end_time} ({b.type})
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            {unavailability.length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>Unavailability:</Text>
+                {unavailability.map((b, idx) => (
+                  <Text key={idx} style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                    {dayLabel(b.day_of_week)} {b.start_time}–{b.end_time}
+                    {b.reason && ` (${b.reason})`}
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            {timeOff.length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>Time Off:</Text>
+                {timeOff.map((b, idx) => (
+                  <Text key={idx} style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                    {b.start_date} to {b.end_date}
+                    {b.note && ` (${b.note})`}
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            {pto.length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>PTO:</Text>
+                {pto.map((b, idx) => (
+                  <Text key={idx} style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                    {b.start_date} to {b.end_date}
+                    {b.note && ` (${b.note})`}
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>Preferences:</Text>
+              <Text style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                Employment: {employmentType === "full_time" ? "Full Time" : "Part Time"}
+              </Text>
+              <Text style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                Weekend: {weekendPreference === "either" ? "Either" : weekendPreference === "saturday" ? "Saturday" : "Sunday"}
+              </Text>
+              {idealHours && (
+                <Text style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                  Ideal hours: {idealHours} per week
+                </Text>
+              )}
+              {hardNoText && (
+                <Text style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                  Hard no: {hardNoText}
+                </Text>
+              )}
+              {changesNext30 && (
+                <Text style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                  Changes expected: {changesNote || "Yes"}
+                </Text>
+              )}
+            </View>
+
             <Text style={{ color: "#7ee787", fontWeight: "700", marginTop: 10 }}>
               ✅ Ready to submit
             </Text>

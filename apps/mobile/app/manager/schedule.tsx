@@ -102,6 +102,8 @@ export default function ManagerSchedule() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [anchorDate, setAnchorDate] = useState<string>("");
+  const [companyPickerOpen, setCompanyPickerOpen] = useState(false);
+  const [studioPickerOpen, setStudioPickerOpen] = useState(false);
 
   const monthStart = useMemo(() => iso(firstOfMonth(month)), [month]);
   const monthEnd = useMemo(() => iso(lastOfMonth(month)), [month]);
@@ -222,20 +224,53 @@ export default function ManagerSchedule() {
   // Full implementation would require converting all 1653 lines of web code to React Native
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: "#0b0c0e" }} contentContainerStyle={{ padding: 18 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: "#0b0f14" }} contentContainerStyle={{ padding: 18 }}>
       <Text style={{ fontSize: 34, fontWeight: "800", color: "#e9eaec", marginBottom: 10 }}>
         Manager Schedule
       </Text>
 
       <View style={{ marginBottom: 12 }}>
         <Text style={{ color: "#e9eaec", opacity: 0.8, marginBottom: 6 }}>Company</Text>
-        {/* TODO: Add Picker for companies */}
-        <Text style={{ color: "#e9eaec" }}>Company selector (to be implemented)</Text>
+        <Pressable
+          onPress={() => setCompanyPickerOpen(true)}
+          style={{
+            padding: 12,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: "#444",
+            backgroundColor: "#1a1a1a",
+          }}
+        >
+          <Text style={{ color: companyId ? "#e9eaec" : "#888" }}>
+            {companyId
+              ? companies.find((c) => c.company_id === companyId)?.name || "Select company"
+              : "Select company"}
+          </Text>
+        </Pressable>
       </View>
 
       <View style={{ marginBottom: 12 }}>
         <Text style={{ color: "#e9eaec", opacity: 0.8, marginBottom: 6 }}>Studio</Text>
-        <Text style={{ color: "#e9eaec" }}>Studio selector (to be implemented)</Text>
+        <Pressable
+          onPress={() => setStudioPickerOpen(true)}
+          disabled={!companyId || studios.length === 0}
+          style={{
+            padding: 12,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: "#444",
+            backgroundColor: "#1a1a1a",
+            opacity: !companyId || studios.length === 0 ? 0.5 : 1,
+          }}
+        >
+          <Text style={{ color: studioId ? "#e9eaec" : "#888" }}>
+            {studioId
+              ? studios.find((s) => s.studio_id === studioId)?.name || "Select studio"
+              : studios.length === 0
+              ? "Select company first"
+              : "Select studio"}
+          </Text>
+        </Pressable>
       </View>
 
       <Pressable
@@ -269,6 +304,142 @@ export default function ManagerSchedule() {
           </Text>
         </View>
       )}
+
+      {/* Company Picker Modal */}
+      <Modal
+        visible={companyPickerOpen}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setCompanyPickerOpen(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.7)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: "#1a1a1a",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              padding: 20,
+              maxHeight: "80%",
+            }}
+          >
+            <Text style={{ color: "#e9eaec", fontSize: 20, fontWeight: "700", marginBottom: 16 }}>
+              Select Company
+            </Text>
+            <ScrollView>
+              {companies.map((c) => (
+                <Pressable
+                  key={c.company_id}
+                  onPress={() => {
+                    setCompanyId(c.company_id);
+                    setCompanyPickerOpen(false);
+                  }}
+                  style={{
+                    padding: 16,
+                    borderRadius: 10,
+                    backgroundColor: companyId === c.company_id ? "#2563eb" : "#2a2a2a",
+                    marginBottom: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#e9eaec",
+                      fontWeight: companyId === c.company_id ? "700" : "400",
+                    }}
+                  >
+                    {c.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable
+              onPress={() => setCompanyPickerOpen(false)}
+              style={{
+                marginTop: 16,
+                padding: 12,
+                borderRadius: 10,
+                backgroundColor: "#444",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: "#e9eaec", fontWeight: "700" }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Studio Picker Modal */}
+      <Modal
+        visible={studioPickerOpen}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setStudioPickerOpen(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.7)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: "#1a1a1a",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              padding: 20,
+              maxHeight: "80%",
+            }}
+          >
+            <Text style={{ color: "#e9eaec", fontSize: 20, fontWeight: "700", marginBottom: 16 }}>
+              Select Studio
+            </Text>
+            <ScrollView>
+              {studios.map((s) => (
+                <Pressable
+                  key={s.studio_id}
+                  onPress={() => {
+                    setStudioId(s.studio_id);
+                    setStudioPickerOpen(false);
+                  }}
+                  style={{
+                    padding: 16,
+                    borderRadius: 10,
+                    backgroundColor: studioId === s.studio_id ? "#2563eb" : "#2a2a2a",
+                    marginBottom: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#e9eaec",
+                      fontWeight: studioId === s.studio_id ? "700" : "400",
+                    }}
+                  >
+                    {s.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable
+              onPress={() => setStudioPickerOpen(false)}
+              style={{
+                marginTop: 16,
+                padding: 12,
+                borderRadius: 10,
+                backgroundColor: "#444",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: "#e9eaec", fontWeight: "700" }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }

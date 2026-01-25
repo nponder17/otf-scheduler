@@ -863,9 +863,82 @@ export default function EmployeeForm() {
       ) : (
         <>
           <Card title="Review your answers">
-            <div style={{ color: "#9aa4b2" }}>
+            <div style={{ color: "#9aa4b2", marginBottom: 12 }}>
               If everything looks correct, click Submit.
             </div>
+
+            {availability.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>Availability:</div>
+                {availability.map((b, idx) => (
+                  <div key={idx} style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                    {dayLabel(b.day_of_week)} {b.start_time}–{b.end_time} ({b.type})
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {unavailability.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>Unavailability:</div>
+                {unavailability.map((b, idx) => (
+                  <div key={idx} style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                    {dayLabel(b.day_of_week)} {b.start_time}–{b.end_time}
+                    {b.reason && ` (${b.reason})`}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {timeOff.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>Time Off:</div>
+                {timeOff.map((b, idx) => (
+                  <div key={idx} style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                    {b.start_date} to {b.end_date}
+                    {b.note && ` (${b.note})`}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {pto.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>PTO:</div>
+                {pto.map((b, idx) => (
+                  <div key={idx} style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                    {b.start_date} to {b.end_date}
+                    {b.note && ` (${b.note})`}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: "white", fontWeight: "700", marginBottom: 6 }}>Preferences:</div>
+              <div style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                Employment: {employmentType === "full_time" ? "Full Time" : "Part Time"}
+              </div>
+              <div style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                Weekend: {weekendPreference === "either" ? "Either" : weekendPreference === "saturday" ? "Saturday" : "Sunday"}
+              </div>
+              {idealHours && (
+                <div style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                  Ideal hours: {idealHours} per week
+                </div>
+              )}
+              {hardNoText && (
+                <div style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                  Hard no: {hardNoText}
+                </div>
+              )}
+              {changesNext30 && (
+                <div style={{ color: "#9aa4b2", marginLeft: 8 }}>
+                  Changes expected: {changesNote || "Yes"}
+                </div>
+              )}
+            </div>
+
             <div style={{ color: "#7ee787", fontWeight: "700", marginTop: 10 }}>
               ✅ Ready to submit
             </div>

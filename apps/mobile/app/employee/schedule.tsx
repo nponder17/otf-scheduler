@@ -142,11 +142,10 @@ export default function EmployeeSchedule() {
             console.error("Error clearing storage:", error);
           }
           
-          // Force navigation to login - ensure it happens after state updates
-          // Use requestAnimationFrame to ensure navigation happens after render cycle
-          requestAnimationFrame(() => {
-            router.replace("/login" as any);
-          });
+          // Force navigation to login - use the same method as login page uses
+          // Wait for async operations to complete, then navigate
+          await new Promise(resolve => setTimeout(resolve, 100));
+          router.replace("/login" as any);
         },
       },
     ]);

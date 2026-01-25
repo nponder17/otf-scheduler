@@ -1,0 +1,130 @@
+import React, { useState, useRef } from "react";
+import { View, Text, TextInput, Pressable, Alert, ScrollView, Platform } from "react-native";
+import { useRouter } from "expo-router";
+import { apiPost } from "../../lib/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+export default function SystemAdminLogin() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const passwordInputRef = useRef<TextInput>(null);
+
+  async function handleLogin() {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter both email and password");
+      return;
+    }
+
+    if (loading) return;
+
+    setLoading(true);
+    try {
+      const response = await apiPost<{
+        access_token: string;
+        role: string;
+        user_id: string;
+        name: string;
+        email: string;
+      }>("/auth/login/system-admin", {
+        email: email.toLowerCase().trim(),
+        password,
+      });
+
+      // Store token and user info
+      await AsyncStorage.setItem("auth_token", response.access_token);
+      await AsyncStorage.setItem("user_role", response.role);
+      await AsyncStorage.setItem("user_id", response.user_id);
+      await AsyncStorage.setItem("user_name", response.name);
+
+      // Navigate to system admin dashboard
+      await new Promise(resolve => setTimeout(resolve, 100));
+      router.replace("/system-admin/dashboard" as any);
+    } catch (error: any) {
+      console.error("Login error:", error);
+      const errorMessage = error?.message || "Invalid email or password";
+      Alert.alert("Login Failed", errorMessage);
+      setLoading(false);
+    }
+  }
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#0b0f14" }}
+      contentContainerStyle={{
+        padding: 20,
+        width: "100%",
+        ...(Platform.OS === "web" ? { maxWidth: 600, alignSelf: "center" as const } : {}),
+      }}
+    >
+      <Text style={{ fontSize: 34, fontWeight: "800", color: "#e9eaec", marginBottom: 10, textAlign: "center" }}>
+        System Admin Login
+      </Text>
+
+      <View style={{ marginBottom: 16 }}>
+        <Text style={{ color: "#e9eaec", opacity: 0.8, marginBottom: 6 }}>Email</Text>
+        <TextInput
+          value={email}
+          onChangeText={setEmail}
+          placeholder="admin@example.com"
+          placeholderTextColor="#888"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          returnKeyType="next"
+          onSubmitEditing={() => {
+            passwordInputRef.current?.focus();
+          }}
+          style={{
+            padding: 12,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: "#444",
+            backgroundColor: "#1a1a1a",
+            color: "#e9eaec",
+          }}
+        />
+      </View>
+
+      <View style={{ marginBottom: 16 }}>
+        <Text style={{ color: "#e9eaec", opacity: 0.8, marginBottom: 6 }}>Password</Text>
+        <TextInput
+          ref={passwordInputRef}
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Enter your password"
+          placeholderTextColor="#888"
+          secureTextEntry
+          returnKeyType="done"
+          onSubmitEditing={handleLogin}
+          editable={!loading}
+          style={{
+            padding: 12,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: "#444",
+            backgroundColor: "#1a1a1a",
+            color: "#e9eaec",
+          }}
+        />
+      </View>
+
+      <Pressable
+        onPress={handleLogin}
+        disabled={loading}
+        style={{
+          padding: 14,
+          borderRadius: 16,
+          backgroundColor: loading ? "#6b7280" : "#1f6feb",
+          opacity: loading ? 0.5 : 1,
+          marginBottom: 12,
+        }}
+      >
+        <Text style={{ color: "white", fontWeight: "700", textAlign: "center" }}>
+          {loading ? "Logging in..." : "Login"}
+        </Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+

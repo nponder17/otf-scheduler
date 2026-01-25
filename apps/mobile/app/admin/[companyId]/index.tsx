@@ -15,7 +15,6 @@ const WEB_BASE_RAW =
 // normalize: remove trailing slash
 const WEB_BASE = WEB_BASE_RAW.replace(/\/+$/, "");
 
-
 type Company = {
   company_id: string;
   name: string;
@@ -36,6 +35,8 @@ type Employee = {
 export default function CompanyAdmin() {
   const { companyId } = useLocalSearchParams<{ companyId: string }>();
   const companyIdStr = useMemo(() => String(companyId || ""), [companyId]);
+
+  const isValidCompanyId = !!companyIdStr && companyIdStr !== "undefined";
 
   const [company, setCompany] = useState<Company | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -71,7 +72,7 @@ export default function CompanyAdmin() {
   }
 
   useEffect(() => {
-    if (!companyIdStr || companyIdStr === "undefined") return;
+    if (!isValidCompanyId) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyIdStr]);
@@ -90,9 +91,9 @@ export default function CompanyAdmin() {
   const API_BASE = getApiBase();
 
   const proxiedLogoUrl = useMemo(() => {
-    if (!companyIdStr) return "";
+    if (!isValidCompanyId) return "";
     return `${API_BASE}/admin/companies/${companyIdStr}/logo?bust=${logoBust}`;
-  }, [API_BASE, companyIdStr, logoBust]);
+  }, [API_BASE, companyIdStr, logoBust, isValidCompanyId]);
 
   const logoFileName = useMemo(() => {
     const raw = (company?.logo_url || "").trim();
@@ -105,10 +106,10 @@ export default function CompanyAdmin() {
     }
   }, [company?.logo_url]);
 
-  const showLogo = !!companyIdStr && !!company && !logoFailed;
+  const showLogo = isValidCompanyId && !!company && !logoFailed;
 
   async function clearAllFormSubmissions() {
-    if (!companyIdStr) return;
+    if (!isValidCompanyId) return;
 
     const ok =
       Platform.OS === "web"
@@ -149,7 +150,7 @@ export default function CompanyAdmin() {
   }
 
   async function clearScheduleArtifacts() {
-    if (!companyIdStr) return;
+    if (!isValidCompanyId) return;
 
     const ok =
       Platform.OS === "web"
@@ -217,7 +218,6 @@ export default function CompanyAdmin() {
         )}
 
         <Text style={{ fontSize: 26, fontWeight: "800", textAlign: "center" }}>{title}</Text>
-
         {!!subtitle && <Text style={{ opacity: 0.7, textAlign: "center" }}>{subtitle}</Text>}
 
         {!!logoFileName && (
@@ -227,7 +227,15 @@ export default function CompanyAdmin() {
 
       <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
         <Link href={`/admin/${companyIdStr}/add`} asChild>
-          <Pressable style={{ padding: 12, borderRadius: 10, backgroundColor: "#111" }}>
+          <Pressable
+            disabled={!isValidCompanyId}
+            style={{
+              padding: 12,
+              borderRadius: 10,
+              backgroundColor: !isValidCompanyId ? "#6b7280" : "#111",
+              opacity: !isValidCompanyId ? 0.7 : 1,
+            }}
+          >
             <Text style={{ color: "white", fontWeight: "700" }}>Add employee</Text>
           </Pressable>
         </Link>
@@ -238,19 +246,26 @@ export default function CompanyAdmin() {
             setLogoBust(Date.now());
             load();
           }}
-          style={{ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#ddd" }}
+          disabled={!isValidCompanyId}
+          style={{
+            padding: 12,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: "#ddd",
+            opacity: !isValidCompanyId ? 0.6 : 1,
+          }}
         >
           <Text style={{ fontWeight: "700" }}>Refresh</Text>
         </Pressable>
 
         <Pressable
           onPress={clearAllFormSubmissions}
-          disabled={clearingForms}
+          disabled={clearingForms || !isValidCompanyId}
           style={{
             padding: 12,
             borderRadius: 10,
-            backgroundColor: clearingForms ? "#6b7280" : "#ef4444",
-            opacity: clearingForms ? 0.7 : 1,
+            backgroundColor: clearingForms || !isValidCompanyId ? "#6b7280" : "#ef4444",
+            opacity: clearingForms || !isValidCompanyId ? 0.7 : 1,
           }}
         >
           <Text style={{ color: "white", fontWeight: "800" }}>
@@ -260,12 +275,12 @@ export default function CompanyAdmin() {
 
         <Pressable
           onPress={clearScheduleArtifacts}
-          disabled={clearingSchedule}
+          disabled={clearingSchedule || !isValidCompanyId}
           style={{
             padding: 12,
             borderRadius: 10,
-            backgroundColor: clearingSchedule ? "#6b7280" : "#f59e0b",
-            opacity: clearingSchedule ? 0.8 : 1,
+            backgroundColor: clearingSchedule || !isValidCompanyId ? "#6b7280" : "#f59e0b",
+            opacity: clearingSchedule || !isValidCompanyId ? 0.8 : 1,
           }}
         >
           <Text style={{ color: "black", fontWeight: "900" }}>
@@ -276,12 +291,17 @@ export default function CompanyAdmin() {
 
       {!!err && <Text style={{ color: "crimson" }}>{err}</Text>}
 
-      {employees.length === 0 ? (
+      {!isValidCompanyId ? (
+        <Text style={{ color: "crimson" }}>
+          Missing/invalid companyId in route. This page should be /admin/&lt;companyId&gt;
+        </Text>
+      ) : employees.length === 0 ? (
         <Text>No employees yet.</Text>
       ) : (
         <View style={{ gap: 10 }}>
           {employees.map((e) => {
-            const formPath = `/form/${e.employee_id}`;
+            const companyIdEncoded = encodeURIComponent(companyIdStr);
+            const formPath = `/form/${e.employee_id}?companyId=${companyIdEncoded}`;
             const formUrl = `${WEB_BASE}${formPath}`;
 
             return (

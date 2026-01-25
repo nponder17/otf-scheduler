@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import EmployeeSchedule from "./pages/EmployeeSchedule";
 import ManagerLogin from "./pages/ManagerLogin";
 import SystemAdminLogin from "./pages/SystemAdminLogin";
+import SystemAdminDashboard from "./pages/SystemAdminDashboard";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
 
           {/* System Admin routes */}
           <Route path="/system-admin/login" element={<SystemAdminLogin />} />
+          <Route path="/system-admin/dashboard" element={<SystemAdminDashboard />} />
 
       <Route path="*" element={<div style={{ padding: 24 }}>Not found</div>} />
     </Routes>

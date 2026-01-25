@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 # revision identifiers, used by Alembic.
 revision: str = 'add_managers_admins'
-down_revision: Union[str, Sequence[str], None] = 'd1e2f3a4b5c6'
+down_revision: Union[str, Sequence[str], None] = 'add_password_hash'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

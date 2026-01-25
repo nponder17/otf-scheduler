@@ -23,6 +23,7 @@ type Employee = {
   name: string;
   email: string;
   phone: string | null;
+  hire_date: string | null;
   is_active: boolean;
 };
 

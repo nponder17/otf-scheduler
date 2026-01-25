@@ -4,6 +4,7 @@ import EmployeeForm from "./pages/EmployeeForm";
 import AdminIndex from "./pages/AdminIndex";
 import CompanyAdmin from "./pages/CompanyAdmin";
 import AddEmployee from "./pages/AddEmployee";
+import Home from "./pages/Home";
 import Login from "./pages/Login";
 import EmployeeSchedule from "./pages/EmployeeSchedule";
 import ManagerLogin from "./pages/ManagerLogin";
@@ -12,9 +13,9 @@ import SystemAdminDashboard from "./pages/SystemAdminDashboard";
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="/manager/schedule" element={<ManagerSchedule />} />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/manager/schedule" element={<ManagerSchedule />} />
 
       {/* Employee form route */}
       <Route path="/form/:employeeId" element={<EmployeeForm />} />

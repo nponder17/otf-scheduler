@@ -50,6 +50,7 @@ export default function EmployeeSchedule() {
   const [teamSchedule, setTeamSchedule] = useState<any>(null);
   const [employeeId, setEmployeeId] = useState<string>("");
   const [companyId, setCompanyId] = useState<string>("");
+  const [shouldLogout, setShouldLogout] = useState(false);
   const router = useRouter();
 
   const monthStart = useMemo(() => iso(firstOfMonth(month)), [month]);
@@ -66,6 +67,35 @@ export default function EmployeeSchedule() {
       loadTeamSchedule();
     }
   }, [monthStart, monthEnd, viewMode]);
+
+  // Handle logout navigation separately from Alert callback
+  useEffect(() => {
+    if (shouldLogout) {
+      const performLogout = async () => {
+        try {
+          await AsyncStorage.multiRemove([
+            "auth_token",
+            "employee_id",
+            "employee_name",
+            "company_id",
+          ]);
+        } catch (error) {
+          console.error("Error clearing storage:", error);
+        }
+        
+        setSchedule(null);
+        setTeamSchedule(null);
+        setEmployeeId("");
+        setCompanyId("");
+        setShouldLogout(false);
+        
+        // Navigate to login
+        router.replace("/login" as any);
+      };
+      
+      performLogout();
+    }
+  }, [shouldLogout, router]);
 
   async function checkAuth() {
     const token = await AsyncStorage.getItem("auth_token");
@@ -117,42 +147,15 @@ export default function EmployeeSchedule() {
     }
   }
 
-  async function handleLogout() {
+  function handleLogout() {
     Alert.alert("Logout", "Are you sure you want to logout?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Logout",
         style: "destructive",
-        onPress: async () => {
-          // Clear all stored data first
-          try {
-            await AsyncStorage.multiRemove([
-              "auth_token",
-              "employee_id",
-              "employee_name",
-              "company_id",
-            ]);
-          } catch (error) {
-            console.error("Error clearing storage:", error);
-          }
-          
-          // Reset state immediately
-          setSchedule(null);
-          setTeamSchedule(null);
-          setEmployeeId("");
-          setCompanyId("");
-          
-          // Navigate to login - use push then replace to ensure navigation happens
-          // The Alert callback might interfere with navigation, so we do it after
-          setTimeout(() => {
-            // Try multiple navigation methods to ensure one works
-            try {
-              router.replace("/login" as any);
-            } catch (e) {
-              // Fallback
-              router.push("/login" as any);
-            }
-          }, 0);
+        onPress: () => {
+          // Trigger logout via state to avoid navigation issues in Alert callback
+          setShouldLogout(true);
         },
       },
     ]);

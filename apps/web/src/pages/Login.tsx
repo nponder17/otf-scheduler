@@ -148,6 +148,11 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !loading && email && password) {
+                  handleLogin(e);
+                }
+              }}
               placeholder="Enter your password"
               style={styles.input}
               disabled={loading}

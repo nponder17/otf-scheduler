@@ -66,6 +66,10 @@ export default function Login() {
           placeholderTextColor="#888"
           autoCapitalize="none"
           keyboardType="email-address"
+          returnKeyType="next"
+          onSubmitEditing={() => {
+            passwordInputRef.current?.focus();
+          }}
           style={{
             padding: 12,
             borderRadius: 10,
@@ -80,11 +84,15 @@ export default function Login() {
       <View style={{ marginBottom: 16 }}>
         <Text style={{ color: "#e9eaec", opacity: 0.8, marginBottom: 6 }}>Password</Text>
         <TextInput
+          ref={passwordInputRef}
           value={password}
           onChangeText={setPassword}
           placeholder="Enter your password"
           placeholderTextColor="#888"
           secureTextEntry
+          returnKeyType="done"
+          onSubmitEditing={handleLogin}
+          editable={!loading}
           style={{
             padding: 12,
             borderRadius: 10,

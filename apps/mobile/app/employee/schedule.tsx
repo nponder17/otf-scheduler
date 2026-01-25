@@ -125,7 +125,7 @@ export default function EmployeeSchedule() {
         style: "destructive",
         onPress: async () => {
           try {
-            // Clear all stored data
+            // Clear all stored data first
             await AsyncStorage.multiRemove([
               "auth_token",
               "employee_id",
@@ -138,19 +138,15 @@ export default function EmployeeSchedule() {
             setTeamSchedule(null);
             setEmployeeId("");
             setCompanyId("");
-            
-            // Force navigation to login - use push instead of replace to ensure navigation happens
-            router.push("/login" as any);
-            
-            // Fallback: if push doesn't work, try replace after a small delay
-            setTimeout(() => {
-              router.replace("/login" as any);
-            }, 100);
           } catch (error) {
-            console.error("Logout error:", error);
-            // Even if there's an error, try to navigate
-            router.push("/login" as any);
+            console.error("Error clearing storage:", error);
           }
+          
+          // Navigate to login - use replace to prevent going back
+          // Wait a moment to ensure storage is cleared
+          setTimeout(() => {
+            router.replace("/login" as any);
+          }, 50);
         },
       },
     ]);

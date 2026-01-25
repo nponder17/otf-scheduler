@@ -50,7 +50,6 @@ export default function EmployeeSchedule() {
   const [teamSchedule, setTeamSchedule] = useState<any>(null);
   const [employeeId, setEmployeeId] = useState<string>("");
   const [companyId, setCompanyId] = useState<string>("");
-  const [shouldLogout, setShouldLogout] = useState(false);
   const router = useRouter();
 
   const monthStart = useMemo(() => iso(firstOfMonth(month)), [month]);
@@ -68,45 +67,6 @@ export default function EmployeeSchedule() {
     }
   }, [monthStart, monthEnd, viewMode]);
 
-  // Handle logout navigation separately from Alert callback
-  useEffect(() => {
-    if (shouldLogout) {
-      const performLogout = async () => {
-        try {
-          // Clear all stored data
-          await AsyncStorage.multiRemove([
-            "auth_token",
-            "employee_id",
-            "employee_name",
-            "company_id",
-          ]);
-        } catch (error) {
-          console.error("Error clearing storage:", error);
-        }
-        
-        // Reset state
-        setSchedule(null);
-        setTeamSchedule(null);
-        setEmployeeId("");
-        setCompanyId("");
-        setShouldLogout(false);
-        
-        // Wait a moment then navigate to login
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Try multiple navigation methods to ensure it works
-        try {
-          router.replace("/login" as any);
-        } catch (e) {
-          console.error("Navigation error:", e);
-          // Fallback
-          router.push("/login" as any);
-        }
-      };
-      
-      performLogout();
-    }
-  }, [shouldLogout, router]);
 
   async function checkAuth() {
     const token = await AsyncStorage.getItem("auth_token");
@@ -158,15 +118,43 @@ export default function EmployeeSchedule() {
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
     Alert.alert("Logout", "Are you sure you want to logout?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Logout",
         style: "destructive",
-        onPress: () => {
-          // Trigger logout via state to avoid navigation issues in Alert callback
-          setShouldLogout(true);
+        onPress: async () => {
+          try {
+            // Clear all stored data
+            await AsyncStorage.multiRemove([
+              "auth_token",
+              "employee_id",
+              "employee_name",
+              "company_id",
+            ]);
+          } catch (error) {
+            console.error("Error clearing storage:", error);
+          }
+          
+          // Reset state
+          setSchedule(null);
+          setTeamSchedule(null);
+          setEmployeeId("");
+          setCompanyId("");
+          
+          // Wait a moment for state to clear
+          await new Promise(resolve => setTimeout(resolve, 50));
+          
+          // Navigate to login - use requestAnimationFrame to ensure it happens after render
+          requestAnimationFrame(() => {
+            try {
+              router.replace("/login" as any);
+            } catch (e) {
+              console.error("Navigation error, trying push:", e);
+              router.push("/login" as any);
+            }
+          });
         },
       },
     ]);

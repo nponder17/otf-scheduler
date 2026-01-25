@@ -73,6 +73,7 @@ export default function EmployeeSchedule() {
     if (shouldLogout) {
       const performLogout = async () => {
         try {
+          // Clear all stored data
           await AsyncStorage.multiRemove([
             "auth_token",
             "employee_id",
@@ -83,14 +84,24 @@ export default function EmployeeSchedule() {
           console.error("Error clearing storage:", error);
         }
         
+        // Reset state
         setSchedule(null);
         setTeamSchedule(null);
         setEmployeeId("");
         setCompanyId("");
         setShouldLogout(false);
         
-        // Navigate to login
-        router.replace("/login" as any);
+        // Wait a moment then navigate to login
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Try multiple navigation methods to ensure it works
+        try {
+          router.replace("/login" as any);
+        } catch (e) {
+          console.error("Navigation error:", e);
+          // Fallback
+          router.push("/login" as any);
+        }
       };
       
       performLogout();

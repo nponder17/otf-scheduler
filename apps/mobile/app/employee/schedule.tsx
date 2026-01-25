@@ -323,6 +323,21 @@ export default function EmployeeSchedule() {
         </Text>
       )}
 
+      {/* Fill Out Availability Form Button */}
+      <Pressable
+        onPress={handleOpenForm}
+        style={{
+          padding: 12,
+          borderRadius: 10,
+          backgroundColor: "#2563eb",
+          marginBottom: 12,
+        }}
+      >
+        <Text style={{ color: "white", fontWeight: "700", textAlign: "center" }}>
+          Fill Out Availability Form
+        </Text>
+      </Pressable>
+
       {/* View Mode Toggle */}
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
         <Pressable

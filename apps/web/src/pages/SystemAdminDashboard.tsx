@@ -57,6 +57,38 @@ async function apiPost<T>(path: string, body: any): Promise<T> {
   return res.json();
 }
 
+async function apiPut<T>(path: string, body: any): Promise<T> {
+  const token = localStorage.getItem("auth_token");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(data.detail || "Request failed");
+  }
+  return res.json();
+}
+
+async function apiDelete<T>(path: string): Promise<T> {
+  const token = localStorage.getItem("auth_token");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(data.detail || "Request failed");
+  }
+  return res.json();
+}
+
 export default function SystemAdminDashboard() {
   const navigate = useNavigate();
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -70,6 +102,8 @@ export default function SystemAdminDashboard() {
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [showAddManager, setShowAddManager] = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [showEditEmployee, setShowEditEmployee] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyTimezone, setNewCompanyTimezone] = useState("America/New_York");
   const [newManagerName, setNewManagerName] = useState("");
@@ -78,6 +112,10 @@ export default function SystemAdminDashboard() {
   const [newEmployeeName, setNewEmployeeName] = useState("");
   const [newEmployeeEmail, setNewEmployeeEmail] = useState("");
   const [newEmployeePhone, setNewEmployeePhone] = useState("");
+  const [editEmployeeName, setEditEmployeeName] = useState("");
+  const [editEmployeeEmail, setEditEmployeeEmail] = useState("");
+  const [editEmployeePhone, setEditEmployeePhone] = useState("");
+  const [editEmployeeHireDate, setEditEmployeeHireDate] = useState("");
 
   useEffect(() => {
     checkAuth();
@@ -210,6 +248,56 @@ export default function SystemAdminDashboard() {
       alert("Employee created successfully");
     } catch (e: any) {
       alert(`Error: ${e?.message ?? "Failed to create employee"}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleEditEmployee(employee: Employee) {
+    setEditingEmployee(employee);
+    setEditEmployeeName(employee.name);
+    setEditEmployeeEmail(employee.email);
+    setEditEmployeePhone(employee.phone || "");
+    setEditEmployeeHireDate(employee.hire_date ? employee.hire_date.split("T")[0] : "");
+    setShowEditEmployee(true);
+  }
+
+  async function handleUpdateEmployee() {
+    if (!editingEmployee) return;
+    if (!editEmployeeName.trim() || !editEmployeeEmail.trim()) {
+      alert("Please fill in name and email");
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiPut(`/system-admin/employees/${editingEmployee.employee_id}`, {
+        name: editEmployeeName.trim(),
+        email: editEmployeeEmail.trim(),
+        phone: editEmployeePhone.trim() || null,
+        hire_date: editEmployeeHireDate || null,
+      });
+      setShowEditEmployee(false);
+      setEditingEmployee(null);
+      loadEmployees();
+      alert("Employee updated successfully");
+    } catch (e: any) {
+      alert(`Error: ${e?.message ?? "Failed to update employee"}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteEmployee(employeeId: string, employeeName: string) {
+    if (!window.confirm(`Are you sure you want to delete ${employeeName}? This action cannot be undone.`)) {
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiDelete(`/system-admin/employees/${employeeId}`);
+      loadEmployees();
+      alert("Employee deleted successfully");
+    } catch (e: any) {
+      alert(`Error: ${e?.message ?? "Failed to delete employee"}`);
     } finally {
       setLoading(false);
     }
@@ -474,9 +562,44 @@ export default function SystemAdminDashboard() {
                 <div>
                   {employees.map((e) => (
                     <div key={e.employee_id} style={styles.itemCard}>
-                      <div style={styles.itemName}>{e.name}</div>
-                      <div style={styles.itemEmail}>{e.email}</div>
-                      {e.phone && <div style={styles.itemEmail}>{e.phone}</div>}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={styles.itemName}>{e.name}</div>
+                          <div style={styles.itemEmail}>{e.email}</div>
+                          {e.phone && <div style={styles.itemEmail}>{e.phone}</div>}
+                          {e.hire_date && <div style={styles.itemEmail}>Hire Date: {e.hire_date.split("T")[0]}</div>}
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={() => handleEditEmployee(e)}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 6,
+                              backgroundColor: "#2563eb",
+                              color: "white",
+                              border: "none",
+                              cursor: "pointer",
+                              fontSize: 12,
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteEmployee(e.employee_id, e.name)}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 6,
+                              backgroundColor: "#ef4444",
+                              color: "white",
+                              border: "none",
+                              cursor: "pointer",
+                              fontSize: 12,
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

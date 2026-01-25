@@ -57,34 +57,6 @@ export default function Home() {
           System Admin Login
         </Text>
       </Pressable>
-
-      <Link href="/admin" asChild>
-        <Pressable
-          style={{
-            padding: 12,
-            backgroundColor: "#2a2a2a",
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: "#444",
-          }}
-        >
-          <Text style={{ color: "#e9eaec", textAlign: "center" }}>Open Admin</Text>
-        </Pressable>
-      </Link>
-
-      <Link href="/form/00000000-0000-0000-0000-000000000000" asChild>
-        <Pressable
-          style={{
-            padding: 12,
-            backgroundColor: "#2a2a2a",
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: "#444",
-          }}
-        >
-          <Text style={{ color: "#e9eaec", textAlign: "center" }}>Open sample form</Text>
-        </Pressable>
-      </Link>
     </View>
   );
 }

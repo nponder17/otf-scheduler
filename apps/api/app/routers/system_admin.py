@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from uuid import UUID
 from pydantic import BaseModel, EmailStr
+from datetime import date
+from typing import Optional
 
 from app.core.database import get_db
 from app.routers.auth import get_current_system_admin, get_password_hash
@@ -26,6 +28,14 @@ class SystemAdminCreate(BaseModel):
     name: str
     email: EmailStr
     password: str
+
+
+class EmployeeUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    hire_date: Optional[date] = None
+    is_active: Optional[bool] = None
 
 
 # --- Companies ---
@@ -175,6 +185,63 @@ def list_employees(
     ]
 
 
+@router.put("/employees/{employee_id}")
+def update_employee(
+    employee_id: UUID,
+    payload: EmployeeUpdate,
+    db: Session = Depends(get_db),
+    current_admin: SystemAdmin = Depends(get_current_system_admin),
+):
+    """Update an employee (system admin only)."""
+    employee = db.get(Employee, employee_id)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    # Update fields if provided
+    if payload.name is not None:
+        employee.name = payload.name
+    if payload.email is not None:
+        # Check if email is already taken by another employee
+        existing = db.execute(select(Employee).where(Employee.email == payload.email.lower(), Employee.employee_id != employee_id)).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already in use by another employee")
+        employee.email = payload.email.lower()
+    if payload.phone is not None:
+        employee.phone = payload.phone
+    if payload.hire_date is not None:
+        employee.hire_date = payload.hire_date
+    if payload.is_active is not None:
+        employee.is_active = payload.is_active
+
+    db.commit()
+    db.refresh(employee)
+    return {
+        "employee_id": str(employee.employee_id),
+        "company_id": str(employee.company_id),
+        "name": employee.name,
+        "email": employee.email,
+        "phone": employee.phone,
+        "hire_date": employee.hire_date.isoformat() if employee.hire_date else None,
+        "is_active": employee.is_active,
+    }
+
+
+@router.delete("/employees/{employee_id}")
+def delete_employee(
+    employee_id: UUID,
+    db: Session = Depends(get_db),
+    current_admin: SystemAdmin = Depends(get_current_system_admin),
+):
+    """Delete an employee (system admin only)."""
+    employee = db.get(Employee, employee_id)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    db.delete(employee)
+    db.commit()
+    return {"message": "Employee deleted successfully"}
+
+
 # --- System Admins ---
 @router.post("/system-admins")
 def create_system_admin(
@@ -222,4 +289,3 @@ def list_system_admins(
         }
         for a in admins
     ]
-

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select, delete, text
@@ -24,9 +25,10 @@ from app.models.system_admin import SystemAdmin
 
 from app.schemas.employees import EmployeeOut
 from sqlalchemy import text
-from typing import Union
+from typing import Union, Optional
 
 router = APIRouter()
+security = HTTPBearer()
 
 FORM_BASE_URL = "http://localhost:8081"
 
@@ -35,13 +37,31 @@ FORM_BASE_URL = "http://localhost:8081"
 LOGOS_DIR = (Path(__file__).resolve().parents[3] / "mobile" / "assets" / "logos").resolve()
 
 
-# Helper to get current user (manager or system admin) and their company_id
-def get_current_user_and_company(
-    manager: Manager = Depends(get_current_manager),
+# Helper function to allow either manager or system admin
+def get_current_manager_or_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-) -> tuple[Union[Manager, SystemAdmin], UUID]:
-    """Get current manager and their company_id. For system admins, company_id can be None."""
-    return (manager, manager.company_id)
+) -> tuple[Union[Manager, SystemAdmin], Optional[UUID]]:
+    """Get current user (manager or system admin) and their company_id if manager."""
+    from app.routers.auth import decode_token
+    
+    token = credentials.credentials
+    payload = decode_token(token)
+    role = payload.get("role")
+    user_id = payload.get("sub")
+    
+    if role == "manager":
+        manager = db.get(Manager, UUID(user_id))
+        if not manager or not manager.is_active:
+            raise HTTPException(status_code=401, detail="Manager not found or inactive")
+        return (manager, manager.company_id)
+    elif role == "system_admin":
+        admin = db.get(SystemAdmin, UUID(user_id))
+        if not admin or not admin.is_active:
+            raise HTTPException(status_code=401, detail="System admin not found or inactive")
+        return (admin, None)
+    else:
+        raise HTTPException(status_code=403, detail="This endpoint requires manager or system admin role")
 
 
 # --- Companies ---
@@ -62,11 +82,17 @@ def create_company(
 @router.get("/companies")
 def list_companies(
     db: Session = Depends(get_db),
-    current_manager: Manager = Depends(get_current_manager),
+    user_and_company: tuple[Union[Manager, SystemAdmin], Optional[UUID]] = Depends(get_current_manager_or_admin),
 ):
-    """List companies. Managers see only their company, system admins see all."""
-    # For managers, return only their company
-    return [db.get(Company, current_manager.company_id)]
+    """List companies. Managers see only their company."""
+    user, company_id = user_and_company
+    
+    # If manager, return only their company
+    if company_id:
+        company = db.get(Company, company_id)
+        return [company] if company else []
+    # System admin can see all (but this endpoint is for managers, so they'd use /system-admin/companies)
+    return []
 
 
 @router.get("/companies/all")
@@ -206,11 +232,13 @@ def create_employee(
     company_id: UUID,
     payload: EmployeeCreate,
     db: Session = Depends(get_db),
-    current_manager: Manager = Depends(get_current_manager),
+    user_and_company: tuple[Union[Manager, SystemAdmin], Optional[UUID]] = Depends(get_current_manager_or_admin),
 ):
     """Create employee. Managers can only add to their own company."""
+    user, user_company_id = user_and_company
+    
     # Managers can only add employees to their own company
-    if current_manager.company_id != company_id:
+    if user_company_id and user_company_id != company_id:
         raise HTTPException(status_code=403, detail="You can only add employees to your own company")
     
     company = db.get(Company, company_id)
@@ -245,11 +273,13 @@ def create_employee(
 def list_employees(
     company_id: UUID,
     db: Session = Depends(get_db),
-    current_manager: Manager = Depends(get_current_manager),
+    user_and_company: tuple[Union[Manager, SystemAdmin], Optional[UUID]] = Depends(get_current_manager_or_admin),
 ):
     """List employees. Managers can only see their own company's employees."""
+    user, user_company_id = user_and_company
+    
     # Managers can only see their own company's employees
-    if current_manager.company_id != company_id:
+    if user_company_id and user_company_id != company_id:
         raise HTTPException(status_code=403, detail="You can only view employees from your own company")
     
     company = db.get(Company, company_id)

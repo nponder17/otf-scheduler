@@ -70,9 +70,11 @@ export default function EmployeeSchedule() {
 
   // Handle logout navigation - separate from Alert callback to avoid React error #418
   useEffect(() => {
+    console.log("🔍 useEffect triggered, isLoggingOut:", isLoggingOut);
     if (isLoggingOut) {
+      console.log("✅ isLoggingOut is true, starting logout process");
       const performLogout = async () => {
-        console.log("🔄 Logout effect triggered");
+        console.log("🔄 Logout effect - performLogout function called");
         try {
           // Clear all stored data
           console.log("🧹 Clearing AsyncStorage...");
@@ -84,26 +86,45 @@ export default function EmployeeSchedule() {
           ]);
           console.log("✅ AsyncStorage cleared");
           
+          // Verify it's cleared
+          const token = await AsyncStorage.getItem("auth_token");
+          console.log("🔍 Token after clear:", token ? "STILL EXISTS ❌" : "CLEARED ✅");
+          
           // Reset state
+          console.log("🔄 Resetting component state...");
           setSchedule(null);
           setTeamSchedule(null);
           setEmployeeId("");
           setCompanyId("");
           
           // Wait a moment for state to clear
+          console.log("⏳ Waiting 100ms before navigation...");
           await new Promise(resolve => setTimeout(resolve, 100));
           
           // Navigate to login
-          console.log("🧭 Navigating to /login...");
+          console.log("🧭 Attempting navigation to /login...");
           try {
+            console.log("📍 Calling router.replace('/login')...");
             router.replace("/login" as any);
-            console.log("✅ Navigation successful");
+            console.log("✅ router.replace called - navigation should happen now");
+            
+            // Check after a delay if we're still on this page
+            setTimeout(() => {
+              console.log("🔍 Checking if navigation worked (500ms after replace call)...");
+            }, 500);
           } catch (e) {
-            console.error("❌ Navigation error:", e);
-            router.push("/login" as any);
+            console.error("❌ router.replace failed:", e);
+            console.log("📍 Trying router.push('/login') as fallback...");
+            try {
+              router.push("/login" as any);
+              console.log("✅ router.push called");
+            } catch (e2) {
+              console.error("❌ router.push also failed:", e2);
+            }
           }
           
           setIsLoggingOut(false);
+          console.log("✅ Logout process complete, isLoggingOut set to false");
         } catch (error) {
           console.error("❌ Logout error:", error);
           setIsLoggingOut(false);
@@ -111,6 +132,8 @@ export default function EmployeeSchedule() {
       };
       
       performLogout();
+    } else {
+      console.log("⏸️ isLoggingOut is false, skipping logout");
     }
   }, [isLoggingOut, router]);
 
@@ -171,15 +194,26 @@ export default function EmployeeSchedule() {
       { 
         text: "Cancel", 
         style: "cancel",
-        onPress: () => console.log("❌ Logout cancelled")
+        onPress: () => {
+          console.log("❌ Logout cancelled");
+        }
       },
       {
         text: "Logout",
         style: "destructive",
         onPress: () => {
-          console.log("✅ Logout confirmed - setting flag");
-          // Set flag to trigger logout in useEffect (avoids React error #418)
-          setIsLoggingOut(true);
+          console.log("✅ Alert 'Logout' button pressed");
+          console.log("🔄 About to call setIsLoggingOut(true)");
+          try {
+            setIsLoggingOut(true);
+            console.log("✅ setIsLoggingOut(true) called successfully");
+            // Also check the state immediately after
+            setTimeout(() => {
+              console.log("🔍 Checking isLoggingOut state after 50ms...");
+            }, 50);
+          } catch (error) {
+            console.error("❌ Error setting isLoggingOut:", error);
+          }
         },
       },
     ]);

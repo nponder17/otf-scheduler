@@ -365,7 +365,7 @@ export default function EmployeeSchedule() {
                     </div>
                     {shifts.length > 0 && (
                       <div>
-                        {shifts.slice(0, 2).map((s, i) => (
+                        {shifts.slice(0, 2).map((s: Shift, i: number) => (
                           <div key={i} style={{ color: "#7ee787", fontSize: 10 }}>
                             {formatTime(s.start_time)}
                           </div>

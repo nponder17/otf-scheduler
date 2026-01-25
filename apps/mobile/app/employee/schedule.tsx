@@ -193,9 +193,10 @@ export default function EmployeeSchedule() {
     console.log("📱 Platform:", Platform.OS);
     console.log("🔍 Current isLoggingOut state:", isLoggingOut);
     
-    // Try without Alert first to see if that's the issue
-    if (Platform.OS === "web") {
+    // Platform-specific handling
+    if (Platform.OS === "web" && typeof window !== "undefined") {
       // On web, use confirm instead of Alert
+      console.log("💻 Using window.confirm for web platform");
       const confirmed = window.confirm("Are you sure you want to logout?");
       console.log("💻 Web confirm result:", confirmed);
       if (confirmed) {

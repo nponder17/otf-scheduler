@@ -312,6 +312,7 @@ export default function EmployeeFormScreen() {
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("17:00");
 
+  const [unDay, setUnDay] = useState<Day>(1);
   const [unStart, setUnStart] = useState("09:00");
   const [unEnd, setUnEnd] = useState("17:00");
   const [unReason, setUnReason] = useState("");
@@ -391,7 +392,7 @@ export default function EmployeeFormScreen() {
     }
 
     const newBlock: UnavailabilityBlock = {
-      day_of_week: day,
+      day_of_week: unDay,
       start_time: unStart,
       end_time: unEnd,
       reason: unReason || null,
@@ -661,7 +662,257 @@ export default function EmployeeFormScreen() {
             )}
           </Card>
 
-          {/* keep the rest of your sections exactly as you had them */}
+          <Card title="Unavailability">
+            <Text style={{ color: "#9aa4b2" }}>
+              Select times when you cannot work.
+            </Text>
+
+            <Spacer h={8} />
+            <DayChips day={unDay} setDay={setUnDay} />
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Start / End</Text>
+
+            <View style={{ flexDirection: "row", marginTop: 10 }}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                {Platform.OS === "web" ? (
+                  <Input value={unStart} onChangeText={setUnStart} placeholder="09:00" />
+                ) : (
+                  <Button label={`Start: ${unStart}`} onPress={() => openPicker("un_start")} />
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                {Platform.OS === "web" ? (
+                  <Input value={unEnd} onChangeText={setUnEnd} placeholder="17:00" />
+                ) : (
+                  <Button label={`End: ${unEnd}`} onPress={() => openPicker("un_end")} />
+                )}
+              </View>
+            </View>
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Reason (optional)</Text>
+            <Input
+              value={unReason}
+              onChangeText={setUnReason}
+              placeholder="e.g., class, appointment"
+            />
+
+            <Button label="Add unavailability block" onPress={addUnavailability} />
+
+            {unavailability.length ? (
+              <View style={{ marginTop: 10 }}>
+                {unavailability.map((b, idx) => (
+                  <View
+                    key={idx}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "#222",
+                      borderRadius: 12,
+                      padding: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <Text style={{ color: "white" }}>
+                      {dayLabel(b.day_of_week)} {b.start_time}–{b.end_time}
+                      {b.reason && ` (${b.reason})`}
+                    </Text>
+                    <Button label="Remove" tone="danger" onPress={() => removeUnavail(idx)} />
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={{ color: "#9aa4b2", marginTop: 10 }}>No unavailability added yet.</Text>
+            )}
+          </Card>
+
+          <Card title="Time Off">
+            <Text style={{ color: "#9aa4b2" }}>Add date ranges when you cannot work.</Text>
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Start Date</Text>
+            <Input
+              value={toStart}
+              onChangeText={setToStart}
+              placeholder="YYYY-MM-DD"
+            />
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>End Date</Text>
+            <Input
+              value={toEnd}
+              onChangeText={setToEnd}
+              placeholder="YYYY-MM-DD"
+            />
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Note (optional)</Text>
+            <Input
+              value={toNote}
+              onChangeText={setToNote}
+              placeholder="e.g., vacation, family event"
+            />
+
+            <Button label="Add time off" onPress={addTimeOff} />
+
+            {timeOff.length ? (
+              <View style={{ marginTop: 10 }}>
+                {timeOff.map((b, idx) => (
+                  <View
+                    key={idx}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "#222",
+                      borderRadius: 12,
+                      padding: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <Text style={{ color: "white" }}>
+                      {b.start_date} to {b.end_date}
+                      {b.note && ` (${b.note})`}
+                    </Text>
+                    <Button label="Remove" tone="danger" onPress={() => removeTimeOff(idx)} />
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={{ color: "#9aa4b2", marginTop: 10 }}>No time off added yet.</Text>
+            )}
+          </Card>
+
+          <Card title="PTO">
+            <Text style={{ color: "#9aa4b2" }}>Add planned time off.</Text>
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Start Date</Text>
+            <Input
+              value={ptoStart}
+              onChangeText={setPtoStart}
+              placeholder="YYYY-MM-DD"
+            />
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>End Date</Text>
+            <Input
+              value={ptoEnd}
+              onChangeText={setPtoEnd}
+              placeholder="YYYY-MM-DD"
+            />
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Note (optional)</Text>
+            <Input
+              value={ptoNote}
+              onChangeText={setPtoNote}
+              placeholder="e.g., vacation"
+            />
+
+            <Button label="Add PTO" onPress={addPto} />
+
+            {pto.length ? (
+              <View style={{ marginTop: 10 }}>
+                {pto.map((b, idx) => (
+                  <View
+                    key={idx}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "#222",
+                      borderRadius: 12,
+                      padding: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <Text style={{ color: "white" }}>
+                      {b.start_date} to {b.end_date}
+                      {b.note && ` (${b.note})`}
+                    </Text>
+                    <Button label="Remove" tone="danger" onPress={() => removePto(idx)} />
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={{ color: "#9aa4b2", marginTop: 10 }}>No PTO added yet.</Text>
+            )}
+          </Card>
+
+          <Card title="Preferences">
+            <Text style={{ color: "white", fontWeight: "700" }}>Employment Type</Text>
+            <ChipGroup
+              value={employmentType}
+              options={[
+                { label: "Full Time", value: "full_time" },
+                { label: "Part Time", value: "part_time" },
+              ]}
+              onChange={setEmploymentType}
+            />
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Weekend Preference</Text>
+            <ChipGroup
+              value={weekendPreference}
+              options={[
+                { label: "Saturday", value: "saturday" },
+                { label: "Sunday", value: "sunday" },
+                { label: "Either", value: "either" },
+              ]}
+              onChange={setWeekendPreference}
+            />
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Ideal Weekly Hours (optional)</Text>
+            <Input
+              value={idealHours}
+              onChangeText={setIdealHours}
+              placeholder="e.g., 20"
+              keyboardType="numeric"
+            />
+
+            <Spacer h={10} />
+            <Text style={{ color: "white", fontWeight: "700" }}>Hard No Constraints (optional)</Text>
+            <Input
+              value={hardNoText}
+              onChangeText={setHardNoText}
+              placeholder="Any constraints you absolutely cannot work around"
+            />
+
+            <Spacer h={10} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Pressable
+                onPress={() => setChangesNext30(!changesNext30)}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderWidth: 2,
+                  borderColor: changesNext30 ? "#1f6feb" : "#444",
+                  backgroundColor: changesNext30 ? "#1f6feb" : "transparent",
+                  borderRadius: 4,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {changesNext30 && (
+                  <Text style={{ color: "white", fontWeight: "900", fontSize: 14 }}>✓</Text>
+                )}
+              </Pressable>
+              <Text style={{ color: "white", fontWeight: "700" }}>
+                Expecting changes in next 30 days?
+              </Text>
+            </View>
+
+            {changesNext30 && (
+              <>
+                <Spacer h={10} />
+                <Text style={{ color: "white", fontWeight: "700" }}>Changes Note</Text>
+                <Input
+                  value={changesNote}
+                  onChangeText={setChangesNote}
+                  placeholder="Describe expected changes"
+                />
+              </>
+            )}
+          </Card>
+
           <Button label="Review" tone="success" onPress={goToReview} />
         </>
       ) : (

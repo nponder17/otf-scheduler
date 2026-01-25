@@ -302,6 +302,21 @@ export default function EmployeeSchedule() {
           </button>
         </div>
 
+        {/* Availability Form Button */}
+        <button
+          onClick={handleOpenForm}
+          style={{
+            ...styles.button,
+            backgroundColor: "#2563eb",
+            marginBottom: 16,
+            width: "100%",
+            padding: "14px",
+            fontSize: "16px",
+          }}
+        >
+          📝 Fill Out Availability Form
+        </button>
+
         {/* View Mode Toggle */}
         <div style={styles.toggleRow}>
           <button

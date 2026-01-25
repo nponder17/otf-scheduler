@@ -698,6 +698,116 @@ export default function SystemAdminDashboard() {
           </View>
         </View>
       </Modal>
+
+      {/* Edit Employee Modal */}
+      <Modal visible={showEditEmployee} transparent animationType="slide" onRequestClose={() => setShowEditEmployee(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "center", padding: 20 }}>
+          <View style={{ backgroundColor: "#1a1a1a", borderRadius: 16, padding: 20 }}>
+            <Text style={{ fontSize: 24, fontWeight: "700", color: "#e9eaec", marginBottom: 16 }}>Edit Employee</Text>
+
+            <Text style={{ color: "#e9eaec", marginBottom: 6 }}>Name</Text>
+            <TextInput
+              value={editEmployeeName}
+              onChangeText={setEditEmployeeName}
+              placeholder="Enter employee name"
+              placeholderTextColor="#888"
+              style={{
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: "#444",
+                backgroundColor: "#0b0f14",
+                color: "#e9eaec",
+                marginBottom: 16,
+              }}
+            />
+
+            <Text style={{ color: "#e9eaec", marginBottom: 6 }}>Email</Text>
+            <TextInput
+              value={editEmployeeEmail}
+              onChangeText={setEditEmployeeEmail}
+              placeholder="employee@example.com"
+              placeholderTextColor="#888"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={{
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: "#444",
+                backgroundColor: "#0b0f14",
+                color: "#e9eaec",
+                marginBottom: 16,
+              }}
+            />
+
+            <Text style={{ color: "#e9eaec", marginBottom: 6 }}>Phone (optional)</Text>
+            <TextInput
+              value={editEmployeePhone}
+              onChangeText={setEditEmployeePhone}
+              placeholder="Enter phone number"
+              placeholderTextColor="#888"
+              keyboardType="phone-pad"
+              style={{
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: "#444",
+                backgroundColor: "#0b0f14",
+                color: "#e9eaec",
+                marginBottom: 16,
+              }}
+            />
+
+            <Text style={{ color: "#e9eaec", marginBottom: 6 }}>Hire Date (optional)</Text>
+            <TextInput
+              value={editEmployeeHireDate}
+              onChangeText={setEditEmployeeHireDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#888"
+              style={{
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: "#444",
+                backgroundColor: "#0b0f14",
+                color: "#e9eaec",
+                marginBottom: 20,
+              }}
+            />
+
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <Pressable
+                onPress={() => {
+                  setShowEditEmployee(false);
+                  setEditingEmployee(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  borderRadius: 10,
+                  backgroundColor: "#444",
+                }}
+              >
+                <Text style={{ color: "#e9eaec", fontWeight: "700", textAlign: "center" }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleUpdateEmployee}
+                disabled={loading}
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  borderRadius: 10,
+                  backgroundColor: "#2563eb",
+                  opacity: loading ? 0.5 : 1,
+                }}
+              >
+                <Text style={{ color: "white", fontWeight: "700", textAlign: "center" }}>Update</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }

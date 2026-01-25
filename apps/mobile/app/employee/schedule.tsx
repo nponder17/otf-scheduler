@@ -142,11 +142,11 @@ export default function EmployeeSchedule() {
             console.error("Error clearing storage:", error);
           }
           
-          // Navigate to login - use replace to prevent going back
-          // Wait a moment to ensure storage is cleared
-          setTimeout(() => {
+          // Force navigation to login - ensure it happens after state updates
+          // Use requestAnimationFrame to ensure navigation happens after render cycle
+          requestAnimationFrame(() => {
             router.replace("/login" as any);
-          }, 50);
+          });
         },
       },
     ]);

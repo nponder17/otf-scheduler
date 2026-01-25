@@ -9,7 +9,15 @@ export default function Home() {
       <Text style={{ fontSize: 22, fontWeight: "700", color: "#e9eaec", marginBottom: 20 }}>Scheduler Mobile</Text>
 
       <Pressable
-        onPress={() => router.push("/login" as any)}
+        onPress={() => {
+          try {
+            router.push("/login" as any);
+          } catch (e) {
+            console.error("Navigation error:", e);
+            // Fallback: try replace
+            router.replace("/login" as any);
+          }
+        }}
         style={{
           padding: 14,
           backgroundColor: "#1f6feb",

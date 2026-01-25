@@ -17,6 +17,8 @@ export default function Login() {
       return;
     }
 
+    if (loading) return; // Prevent double submission
+
     setLoading(true);
     try {
       const response = await apiPost<{
@@ -36,11 +38,13 @@ export default function Login() {
       await AsyncStorage.setItem("employee_name", response.name);
       await AsyncStorage.setItem("company_id", response.company_id);
 
-      // Navigate to employee schedule
+      // Navigate to employee schedule - wait a moment to ensure storage is saved
+      await new Promise(resolve => setTimeout(resolve, 100));
       router.replace("/employee/schedule" as any);
     } catch (error: any) {
-      Alert.alert("Login Failed", error?.message || "Invalid email or password");
-    } finally {
+      console.error("Login error:", error);
+      const errorMessage = error?.message || "Invalid email or password";
+      Alert.alert("Login Failed", errorMessage);
       setLoading(false);
     }
   }

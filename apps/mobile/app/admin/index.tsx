@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { View, Text, Pressable, ScrollView, Platform } from "react-native";
 import { apiGet } from "../../lib/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type Company = {
   company_id: string;
@@ -10,20 +11,39 @@ type Company = {
 };
 
 export default function AdminIndex() {
+  const router = useRouter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [err, setErr] = useState<string>("");
 
   useEffect(() => {
-    (async () => {
-      try {
-        setErr("");
-        const data = await apiGet<Company[]>("/admin/companies");
-        setCompanies(data);
-      } catch (e: any) {
-        setErr(e?.message ?? "Failed to load companies");
-      }
-    })();
+    checkAuth();
+    loadCompanies();
   }, []);
+
+  async function checkAuth() {
+    const token = await AsyncStorage.getItem("auth_token");
+    const role = await AsyncStorage.getItem("user_role");
+    // Allow managers and system admins
+    if (!token || (role !== "manager" && role !== "system_admin")) {
+      // Redirect based on role - managers go to manager login, system admins to system admin login
+      if (role === "system_admin") {
+        router.replace("/system-admin/login" as any);
+      } else {
+        router.replace("/manager/login" as any);
+      }
+      return;
+    }
+  }
+
+  async function loadCompanies() {
+    try {
+      setErr("");
+      const data = await apiGet<Company[]>("/admin/companies");
+      setCompanies(data);
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to load companies");
+    }
+  }
 
   return (
     <ScrollView

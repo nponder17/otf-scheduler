@@ -6,6 +6,8 @@ import CompanyAdmin from "./pages/CompanyAdmin";
 import AddEmployee from "./pages/AddEmployee";
 import Login from "./pages/Login";
 import EmployeeSchedule from "./pages/EmployeeSchedule";
+import ManagerLogin from "./pages/ManagerLogin";
+import SystemAdminLogin from "./pages/SystemAdminLogin";
 
 export default function App() {
   return (
@@ -21,9 +23,15 @@ export default function App() {
       <Route path="/admin/:companyId" element={<CompanyAdmin />} />
       <Route path="/admin/:companyId/add" element={<AddEmployee />} />
 
-      {/* Employee routes */}
-      <Route path="/login" element={<Login />} />
-      <Route path="/employee/schedule" element={<EmployeeSchedule />} />
+          {/* Employee routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/employee/schedule" element={<EmployeeSchedule />} />
+
+          {/* Manager routes */}
+          <Route path="/manager/login" element={<ManagerLogin />} />
+
+          {/* System Admin routes */}
+          <Route path="/system-admin/login" element={<SystemAdminLogin />} />
 
       <Route path="*" element={<div style={{ padding: 24 }}>Not found</div>} />
     </Routes>

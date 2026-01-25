@@ -190,33 +190,53 @@ export default function EmployeeSchedule() {
 
   function handleLogout() {
     console.log("🔴 Logout button clicked");
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { 
-        text: "Cancel", 
-        style: "cancel",
-        onPress: () => {
-          console.log("❌ Logout cancelled");
-        }
-      },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: () => {
-          console.log("✅ Alert 'Logout' button pressed");
-          console.log("🔄 About to call setIsLoggingOut(true)");
-          try {
-            setIsLoggingOut(true);
-            console.log("✅ setIsLoggingOut(true) called successfully");
-            // Also check the state immediately after
-            setTimeout(() => {
-              console.log("🔍 Checking isLoggingOut state after 50ms...");
-            }, 50);
-          } catch (error) {
-            console.error("❌ Error setting isLoggingOut:", error);
-          }
-        },
-      },
-    ]);
+    console.log("📱 Platform:", Platform.OS);
+    console.log("🔍 Current isLoggingOut state:", isLoggingOut);
+    
+    // Try without Alert first to see if that's the issue
+    if (Platform.OS === "web") {
+      // On web, use confirm instead of Alert
+      const confirmed = window.confirm("Are you sure you want to logout?");
+      console.log("💻 Web confirm result:", confirmed);
+      if (confirmed) {
+        console.log("✅ Web logout confirmed - setting flag");
+        setIsLoggingOut(true);
+      } else {
+        console.log("❌ Web logout cancelled");
+      }
+    } else {
+      // On mobile, use Alert
+      console.log("📱 Showing Alert dialog...");
+      Alert.alert(
+        "Logout", 
+        "Are you sure you want to logout?",
+        [
+          { 
+            text: "Cancel", 
+            style: "cancel",
+            onPress: () => {
+              console.log("❌ Alert 'Cancel' button pressed");
+            }
+          },
+          {
+            text: "Logout",
+            style: "destructive",
+            onPress: () => {
+              console.log("✅ Alert 'Logout' button pressed");
+              console.log("🔄 About to call setIsLoggingOut(true)");
+              try {
+                setIsLoggingOut(true);
+                console.log("✅ setIsLoggingOut(true) called successfully");
+              } catch (error) {
+                console.error("❌ Error setting isLoggingOut:", error);
+              }
+            },
+          },
+        ],
+        { cancelable: true, onDismiss: () => console.log("⚠️ Alert dismissed without selection") }
+      );
+      console.log("📱 Alert.alert() called");
+    }
   }
 
   function handleOpenForm() {

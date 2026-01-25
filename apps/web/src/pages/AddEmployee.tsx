@@ -339,7 +339,8 @@ export default function AddEmployee() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.title}>Add Employee</div>
+      <div style={{ maxWidth: "1400px", margin: "0 auto", width: "100%" }}>
+        <div style={styles.title}>Add Employee</div>
       <div style={styles.subtitle}>Company: {companyIdStr}</div>
 
       {!!fieldErrors.general && <div style={styles.error}>{fieldErrors.general}</div>}

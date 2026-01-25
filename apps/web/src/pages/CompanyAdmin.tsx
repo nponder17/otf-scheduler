@@ -321,7 +321,8 @@ export default function CompanyAdmin() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.header}>
+      <div style={{ maxWidth: "1400px", margin: "0 auto", width: "100%" }}>
+        <div style={styles.header}>
         {showLogo ? (
           <img
             src={proxiedLogoUrl}

@@ -74,7 +74,8 @@ export default function AdminIndex() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.title}>Admin</div>
+      <div style={{ maxWidth: "1400px", margin: "0 auto", width: "100%" }}>
+        <div style={styles.title}>Admin</div>
 
       {!!err && <div style={styles.error}>{err}</div>}
 

@@ -487,6 +487,8 @@ export default function EmployeeForm() {
   const styles: Record<string, React.CSSProperties> = {
     page: {
       minHeight: "100vh",
+      width: "100%",
+      maxWidth: "100%",
       background: "#0b0f14",
       color: "#e9eaec",
       padding: 16,
@@ -558,30 +560,31 @@ export default function EmployeeForm() {
 
   return (
     <div style={styles.page}>
-      {!missingCompanyId ? (
-        !logoFailed && !!logoUri ? (
-          <div style={styles.logoContainer}>
-            <img
-              src={logoUri}
-              alt="Company logo"
-              style={styles.logo}
-              onError={() => setLogoFailed(true)}
-            />
+      <div style={{ maxWidth: "1400px", margin: "0 auto", width: "100%" }}>
+        {!missingCompanyId ? (
+          !logoFailed && !!logoUri ? (
+            <div style={styles.logoContainer}>
+              <img
+                src={logoUri}
+                alt="Company logo"
+                style={styles.logo}
+                onError={() => setLogoFailed(true)}
+              />
+            </div>
+          ) : null
+        ) : (
+          <div style={styles.warningBox}>
+            <div style={styles.warningTitle}>Missing companyId in link</div>
+            <div style={styles.warningText}>
+              Your manager link must include <span style={{ color: "white" }}>?companyId=...</span>
+              <br />
+              Ask them to re-copy the form link from the admin dashboard.
+            </div>
           </div>
-        ) : null
-      ) : (
-        <div style={styles.warningBox}>
-          <div style={styles.warningTitle}>Missing companyId in link</div>
-          <div style={styles.warningText}>
-            Your manager link must include <span style={{ color: "white" }}>?companyId=...</span>
-            <br />
-            Ask them to re-copy the form link from the admin dashboard.
-          </div>
-        </div>
-      )}
+        )}
 
-      <div style={styles.title}>Availability Form</div>
-      <div style={styles.subtitle}>Employee ID: {employeeIdStr}</div>
+        <div style={styles.title}>Availability Form</div>
+        <div style={styles.subtitle}>Employee ID: {employeeIdStr}</div>
 
       {step === "form" ? (
         <>

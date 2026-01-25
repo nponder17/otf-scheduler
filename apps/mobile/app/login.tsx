@@ -8,6 +8,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const router = useRouter();
   const passwordInputRef = useRef<TextInput>(null);
 
@@ -44,6 +45,7 @@ export default function Login() {
     } catch (error: any) {
       console.error("Login error:", error);
       const errorMessage = error?.message || "Invalid email or password";
+      setError(errorMessage);
       Alert.alert("Login Failed", errorMessage);
       setLoading(false);
     }

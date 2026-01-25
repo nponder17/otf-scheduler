@@ -10,6 +10,7 @@ from passlib.context import CryptContext
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.models.employee import Employee
 
 router = APIRouter()
@@ -17,7 +18,7 @@ security = HTTPBearer()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT settings
-SECRET_KEY = "your-secret-key-change-in-production"  # TODO: Move to env var
+SECRET_KEY = settings.jwt_secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 

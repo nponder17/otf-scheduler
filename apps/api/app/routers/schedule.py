@@ -1,12 +1,13 @@
-from datetime import date
+from datetime import date, time
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, delete, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.models.scheduled_shifts import ScheduledShift
 
 router = APIRouter()
 
@@ -17,6 +18,19 @@ class ScheduleGenerateRequest(BaseModel):
     month_start: date
     month_end: date
     overwrite: bool = False
+
+
+class ShiftUpdateRequest(BaseModel):
+    employee_id: UUID
+
+
+class ShiftCreateRequest(BaseModel):
+    schedule_run_id: UUID
+    employee_id: UUID
+    shift_date: date
+    label: str
+    start_time: str  # HH:MM
+    end_time: str  # HH:MM
 
 
 @router.post("/generate")
@@ -57,6 +71,7 @@ def get_schedule(run_id: UUID, db: Session = Depends(get_db)):
         text(
             """
             SELECT
+              ss.scheduled_shift_id,
               ss.shift_date,
               ss.day_of_week,
               ss.label,
@@ -249,4 +264,130 @@ def get_schedule_for_employee(run_id: UUID, employee_id: UUID, db: Session = Dep
         "schedule_run_id": str(run_id),
         "employee_id": str(employee_id),
         "shifts": [dict(r) for r in rows],
+    }
+
+
+@router.get("/company/{company_id}/runs")
+def list_schedule_runs(company_id: UUID, db: Session = Depends(get_db)):
+    """List all schedule runs for a company, ordered by most recent first."""
+    runs = db.execute(
+        text(
+            """
+            SELECT 
+              sr.schedule_run_id,
+              sr.company_id,
+              sr.studio_id,
+              s.name AS studio_name,
+              sr.month_start,
+              sr.month_end,
+              sr.created_at,
+              COUNT(ss.scheduled_shift_id) AS shift_count
+            FROM schedule_runs sr
+            LEFT JOIN studios s ON s.studio_id = sr.studio_id
+            LEFT JOIN scheduled_shifts ss ON ss.schedule_run_id = sr.schedule_run_id
+            WHERE sr.company_id = :company_id
+            GROUP BY sr.schedule_run_id, sr.company_id, sr.studio_id, s.name, sr.month_start, sr.month_end, sr.created_at
+            ORDER BY sr.created_at DESC
+            """
+        ),
+        {"company_id": str(company_id)},
+    ).mappings().all()
+
+    return {"runs": [dict(r) for r in runs]}
+
+
+@router.put("/shifts/{shift_id}")
+def update_shift(shift_id: UUID, req: ShiftUpdateRequest, db: Session = Depends(get_db)):
+    """Update the employee assigned to a scheduled shift."""
+    shift = db.get(ScheduledShift, shift_id)
+    if not shift:
+        raise HTTPException(status_code=404, detail="Scheduled shift not found")
+
+    # Verify employee exists and is active
+    employee = db.execute(
+        text("SELECT employee_id, is_active FROM employees WHERE employee_id = :employee_id"),
+        {"employee_id": str(req.employee_id)},
+    ).mappings().first()
+
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not employee["is_active"]:
+        raise HTTPException(status_code=400, detail="Employee is not active")
+
+    shift.employee_id = req.employee_id
+    db.commit()
+    db.refresh(shift)
+
+    return {"scheduled_shift_id": str(shift.scheduled_shift_id), "employee_id": str(shift.employee_id)}
+
+
+@router.delete("/shifts/{shift_id}")
+def delete_shift(shift_id: UUID, db: Session = Depends(get_db)):
+    """Delete a scheduled shift."""
+    shift = db.get(ScheduledShift, shift_id)
+    if not shift:
+        raise HTTPException(status_code=404, detail="Scheduled shift not found")
+
+    shift_id_str = str(shift.scheduled_shift_id)
+    db.delete(shift)
+    db.commit()
+
+    return {"deleted": True, "scheduled_shift_id": shift_id_str}
+
+
+@router.post("/shifts")
+def create_shift(req: ShiftCreateRequest, db: Session = Depends(get_db)):
+    """Create a new scheduled shift."""
+    # Verify schedule run exists
+    run = db.execute(
+        text("SELECT schedule_run_id, company_id, studio_id FROM schedule_runs WHERE schedule_run_id = :run_id"),
+        {"run_id": str(req.schedule_run_id)},
+    ).mappings().first()
+
+    if not run:
+        raise HTTPException(status_code=404, detail="Schedule run not found")
+
+    # Verify employee exists and is active
+    employee = db.execute(
+        text("SELECT employee_id, is_active, company_id FROM employees WHERE employee_id = :employee_id"),
+        {"employee_id": str(req.employee_id)},
+    ).mappings().first()
+
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not employee["is_active"]:
+        raise HTTPException(status_code=400, detail="Employee is not active")
+    if str(employee["company_id"]) != str(run["company_id"]):
+        raise HTTPException(status_code=400, detail="Employee does not belong to this company")
+
+    # Parse times
+    try:
+        start_time_obj = time.fromisoformat(req.start_time)
+        end_time_obj = time.fromisoformat(req.end_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM")
+
+    # Get day of week
+    day_of_week = req.shift_date.weekday()
+
+    # Create shift
+    shift = ScheduledShift(
+        schedule_run_id=req.schedule_run_id,
+        employee_id=req.employee_id,
+        studio_id=run["studio_id"],
+        shift_date=req.shift_date,
+        day_of_week=day_of_week,
+        label=req.label,
+        start_time=start_time_obj,
+        end_time=end_time_obj,
+    )
+
+    db.add(shift)
+    db.commit()
+    db.refresh(shift)
+
+    return {
+        "scheduled_shift_id": str(shift.scheduled_shift_id),
+        "schedule_run_id": str(shift.schedule_run_id),
+        "employee_id": str(shift.employee_id),
     }

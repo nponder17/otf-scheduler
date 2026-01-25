@@ -41,3 +41,22 @@ export async function apiPost<T>(path: string, body: any): Promise<T> {
   return handle(res);
 }
 
+export async function apiPut<T>(path: string, body: any): Promise<T> {
+  const base = getApiBase();
+  const res = await fetch(`${base}${path}`, {
+    method: "PUT",
+    headers: ngrokHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body),
+  });
+  return handle(res);
+}
+
+export async function apiDelete<T>(path: string): Promise<T> {
+  const base = getApiBase();
+  const res = await fetch(`${base}${path}`, {
+    method: "DELETE",
+    headers: ngrokHeaders(),
+  });
+  return handle(res);
+}
+

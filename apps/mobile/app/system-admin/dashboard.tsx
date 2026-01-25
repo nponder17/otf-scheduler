@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, Platform, Alert, Modal, TextInput } from "react-native";
 import { useRouter } from "expo-router";
-import { apiGet, apiPost } from "../../lib/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "../../lib/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type Company = {
@@ -40,6 +40,8 @@ export default function SystemAdminDashboard() {
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [showAddManager, setShowAddManager] = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [showEditEmployee, setShowEditEmployee] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
   // Form states
   const [newCompanyName, setNewCompanyName] = useState("");
@@ -50,6 +52,10 @@ export default function SystemAdminDashboard() {
   const [newEmployeeName, setNewEmployeeName] = useState("");
   const [newEmployeeEmail, setNewEmployeeEmail] = useState("");
   const [newEmployeePhone, setNewEmployeePhone] = useState("");
+  const [editEmployeeName, setEditEmployeeName] = useState("");
+  const [editEmployeeEmail, setEditEmployeeEmail] = useState("");
+  const [editEmployeePhone, setEditEmployeePhone] = useState("");
+  const [editEmployeeHireDate, setEditEmployeeHireDate] = useState("");
 
   useEffect(() => {
     checkAuth();
@@ -185,6 +191,66 @@ export default function SystemAdminDashboard() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleEditEmployee(employee: Employee) {
+    setEditingEmployee(employee);
+    setEditEmployeeName(employee.name);
+    setEditEmployeeEmail(employee.email);
+    setEditEmployeePhone(employee.phone || "");
+    setEditEmployeeHireDate("");
+    setShowEditEmployee(true);
+  }
+
+  async function handleUpdateEmployee() {
+    if (!editingEmployee) return;
+    if (!editEmployeeName.trim() || !editEmployeeEmail.trim()) {
+      Alert.alert("Error", "Please fill in name and email");
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiPut(`/system-admin/employees/${editingEmployee.employee_id}`, {
+        name: editEmployeeName.trim(),
+        email: editEmployeeEmail.trim(),
+        phone: editEmployeePhone.trim() || null,
+        hire_date: editEmployeeHireDate || null,
+      });
+      setShowEditEmployee(false);
+      setEditingEmployee(null);
+      loadEmployees();
+      Alert.alert("Success", "Employee updated successfully");
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Failed to update employee");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteEmployee(employeeId: string, employeeName: string) {
+    Alert.alert(
+      "Delete Employee",
+      `Are you sure you want to delete ${employeeName}? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await apiDelete(`/system-admin/employees/${employeeId}`);
+              loadEmployees();
+              Alert.alert("Success", "Employee deleted successfully");
+            } catch (e: any) {
+              Alert.alert("Error", e?.message ?? "Failed to delete employee");
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
   }
 
   function handleLogout() {
@@ -344,9 +410,37 @@ export default function SystemAdminDashboard() {
                       borderColor: "#444",
                     }}
                   >
-                    <Text style={{ color: "#e9eaec", fontWeight: "600" }}>{e.name}</Text>
-                    <Text style={{ color: "#9aa4b2", fontSize: 14 }}>{e.email}</Text>
-                    {e.phone && <Text style={{ color: "#9aa4b2", fontSize: 14 }}>{e.phone}</Text>}
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: "#e9eaec", fontWeight: "600" }}>{e.name}</Text>
+                        <Text style={{ color: "#9aa4b2", fontSize: 14 }}>{e.email}</Text>
+                        {e.phone && <Text style={{ color: "#9aa4b2", fontSize: 14 }}>{e.phone}</Text>}
+                      </View>
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <Pressable
+                          onPress={() => handleEditEmployee(e)}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 6,
+                            backgroundColor: "#2563eb",
+                          }}
+                        >
+                          <Text style={{ color: "white", fontWeight: "700", fontSize: 12 }}>Edit</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleDeleteEmployee(e.employee_id, e.name)}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 6,
+                            backgroundColor: "#ef4444",
+                          }}
+                        >
+                          <Text style={{ color: "white", fontWeight: "700", fontSize: 12 }}>Delete</Text>
+                        </Pressable>
+                      </View>
+                    </View>
                   </View>
                 ))}
               </View>

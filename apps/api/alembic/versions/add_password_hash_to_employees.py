@@ -1,6 +1,6 @@
 """add password_hash to employees
 
-Revision ID: add_password_hash
+Revision ID: d1e2f3a4b5c6
 Revises: c0c4dcc27def
 Create Date: 2026-01-02 20:00:00.000000
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'add_password_hash'
+revision: str = 'd1e2f3a4b5c6'
 down_revision: Union[str, Sequence[str], None] = 'c0c4dcc27def'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

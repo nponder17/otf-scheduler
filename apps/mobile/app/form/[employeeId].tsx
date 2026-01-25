@@ -548,8 +548,7 @@ export default function EmployeeFormScreen() {
       contentContainerStyle={{
         padding: 16,
         width: "100%",
-        maxWidth: Platform.OS === "web" ? "600px" : "100%",
-        alignSelf: Platform.OS === "web" ? "center" : "stretch",
+        ...(Platform.OS === "web" ? { maxWidth: 600, alignSelf: "center" as const } : {}),
       }}
     >
       {!missingCompanyId ? (

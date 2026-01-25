@@ -228,9 +228,8 @@ export default function ManagerSchedule() {
       style={{ flex: 1, backgroundColor: "#0b0f14" }}
       contentContainerStyle={{
         padding: 18,
-        maxWidth: Platform.OS === "web" ? "600px" : "100%",
-        alignSelf: Platform.OS === "web" ? "center" : "stretch",
         width: "100%",
+        ...(Platform.OS === "web" ? { maxWidth: 600, alignSelf: "center" as const } : {}),
       }}
     >
       <Text style={{ fontSize: 34, fontWeight: "800", color: "#e9eaec", marginBottom: 10 }}>

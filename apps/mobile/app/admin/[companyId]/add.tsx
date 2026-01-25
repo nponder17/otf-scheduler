@@ -236,9 +236,8 @@ export default function AddEmployeeScreen() {
         contentContainerStyle={{
           padding: 20,
           gap: 12,
-          maxWidth: Platform.OS === "web" ? "600px" : "100%",
-          alignSelf: Platform.OS === "web" ? "center" : "stretch",
           width: "100%",
+          ...(Platform.OS === "web" ? { maxWidth: 600, alignSelf: "center" as const } : {}),
         }}
       >
         <Text style={{ fontSize: 22, fontWeight: "700" }}>Employee Created</Text>
@@ -329,9 +328,8 @@ export default function AddEmployeeScreen() {
       contentContainerStyle={{
         padding: 20,
         gap: 12,
-        maxWidth: Platform.OS === "web" ? "600px" : "100%",
-        alignSelf: Platform.OS === "web" ? "center" : "stretch",
         width: "100%",
+        ...(Platform.OS === "web" ? { maxWidth: 600, alignSelf: "center" as const } : {}),
       }}
     >
       <Text style={{ fontSize: 22, fontWeight: "700" }}>Add Employee</Text>

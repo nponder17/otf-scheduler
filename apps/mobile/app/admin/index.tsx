@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "expo-router";
-import { View, Text, Pressable, ScrollView } from "react-native";
+import { View, Text, Pressable, ScrollView, Platform } from "react-native";
 import { apiGet } from "../../lib/api";
 
 type Company = {
@@ -30,9 +30,8 @@ export default function AdminIndex() {
       contentContainerStyle={{
         padding: 20,
         gap: 12,
-        maxWidth: Platform.OS === "web" ? "600px" : "100%",
-        alignSelf: Platform.OS === "web" ? "center" : "stretch",
         width: "100%",
+        ...(Platform.OS === "web" ? { maxWidth: 600, alignSelf: "center" as const } : {}),
       }}
     >
       <Text style={{ fontSize: 22, fontWeight: "700" }}>Admin</Text>

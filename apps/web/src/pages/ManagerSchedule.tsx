@@ -55,6 +55,23 @@ type AuditShiftResponse = {
   candidates: AuditCandidate[];
 };
 
+type ScheduledShift = {
+  scheduled_shift_id: string;
+  shift_date: string;
+  day_of_week: number;
+  label: string;
+  start_time: string;
+  end_time: string;
+  employee_id: string;
+  employee_name: string;
+};
+
+type Employee = {
+  employee_id: string;
+  name: string;
+  email: string;
+};
+
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function iso(d: Date) {
@@ -134,6 +151,8 @@ export default function ManagerSchedule() {
   const [loading, setLoading] = useState(false);
 
   const [coverage, setCoverage] = useState<CoverageRow[]>([]);
+  const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("month");
@@ -155,6 +174,23 @@ export default function ManagerSchedule() {
     candidate_count?: number;
     rejection_summary?: Record<string, number>;
   } | null>(null);
+
+  // Edit modal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingShift, setEditingShift] = useState<ScheduledShift | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Add shift modal state
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [newShift, setNewShift] = useState({
+    shift_date: "",
+    label: "",
+    start_time: "",
+    end_time: "",
+    employee_id: "",
+  });
+  const [addLoading, setAddLoading] = useState(false);
 
   // Responsive grid columns (fits screen)
   const [cols, setCols] = useState(7);
@@ -213,15 +249,41 @@ export default function ManagerSchedule() {
     })();
   }, [companyId]);
 
-  async function loadCoverageForRun(run: string) {
-    const covRes = await fetch(`${API_BASE}/schedules/${run}/coverage`);
-    const covJson = (await covRes.json()) as CoverageResponse | CoverageRow[];
-
-    if (Array.isArray(covJson)) {
-      setCoverage(covJson);
+  // Load employees when company changes
+  useEffect(() => {
+    if (!looksLikeUuid(companyId)) {
+      setEmployees([]);
       return;
     }
-    setCoverage(Array.isArray(covJson.coverage) ? covJson.coverage : []);
+
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/admin/companies/${companyId}/employees`);
+        const data = await res.json();
+        setEmployees(Array.isArray(data) ? data.filter((e: Employee) => e.employee_id) : []);
+      } catch {
+        setEmployees([]);
+      }
+    })();
+  }, [companyId]);
+
+  async function loadCoverageForRun(run: string) {
+    const [covRes, shiftsRes] = await Promise.all([
+      fetch(`${API_BASE}/schedules/${run}/coverage`),
+      fetch(`${API_BASE}/schedules/${run}`),
+    ]);
+
+    const covJson = (await covRes.json()) as CoverageResponse | CoverageRow[];
+    if (Array.isArray(covJson)) {
+      setCoverage(covJson);
+    } else {
+      setCoverage(Array.isArray(covJson.coverage) ? covJson.coverage : []);
+    }
+
+    const shiftsJson = await shiftsRes.json();
+    if (shiftsJson.shifts) {
+      setScheduledShifts(Array.isArray(shiftsJson.shifts) ? shiftsJson.shifts : []);
+    }
   }
 
   async function generate() {
@@ -414,6 +476,122 @@ export default function ManagerSchedule() {
     } finally {
       setAuditLoading(false);
     }
+  }
+
+  // Get scheduled shifts for a specific coverage row
+  function getShiftsForCoverageRow(r: CoverageRow): ScheduledShift[] {
+    const dateKey = normalizeDateKey(r.shift_date);
+    return scheduledShifts.filter(
+      (s) =>
+        normalizeDateKey(s.shift_date) === dateKey &&
+        s.label === r.label &&
+        s.start_time === r.start_time &&
+        s.end_time === r.end_time
+    );
+  }
+
+  async function handleEditShift() {
+    if (!editingShift || !selectedEmployeeId || !runId) return;
+
+    setEditLoading(true);
+    setMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/schedules/shifts/${editingShift.scheduled_shift_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employee_id: selectedEmployeeId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setMsg(data?.detail ? JSON.stringify(data.detail) : "Failed to update shift");
+        return;
+      }
+
+      setEditModalOpen(false);
+      setEditingShift(null);
+      setSelectedEmployeeId("");
+      await loadCoverageForRun(runId);
+      setMsg("Shift updated ✅");
+    } catch (e: any) {
+      setMsg(e?.message ?? "Failed to update shift");
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  async function handleDeleteShift(shiftId: string) {
+    if (!runId) return;
+    if (!confirm("Delete this shift assignment?")) return;
+
+    setMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/schedules/shifts/${shiftId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setMsg(data?.detail ? JSON.stringify(data.detail) : "Failed to delete shift");
+        return;
+      }
+
+      await loadCoverageForRun(runId);
+      setMsg("Shift deleted ✅");
+    } catch (e: any) {
+      setMsg(e?.message ?? "Failed to delete shift");
+    }
+  }
+
+  async function handleAddShift() {
+    if (!runId || !newShift.shift_date || !newShift.label || !newShift.start_time || !newShift.end_time || !newShift.employee_id) {
+      setMsg("Please fill in all fields");
+      return;
+    }
+
+    setAddLoading(true);
+    setMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/schedules/shifts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          schedule_run_id: runId,
+          employee_id: newShift.employee_id,
+          shift_date: newShift.shift_date,
+          label: newShift.label,
+          start_time: newShift.start_time,
+          end_time: newShift.end_time,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setMsg(data?.detail ? JSON.stringify(data.detail) : "Failed to add shift");
+        return;
+      }
+
+      setAddModalOpen(false);
+      setNewShift({
+        shift_date: "",
+        label: "",
+        start_time: "",
+        end_time: "",
+        employee_id: "",
+      });
+      await loadCoverageForRun(runId);
+      setMsg("Shift added ✅");
+    } catch (e: any) {
+      setMsg(e?.message ?? "Failed to add shift");
+    } finally {
+      setAddLoading(false);
+    }
+  }
+
+  function openEditModal(shift: ScheduledShift) {
+    setEditingShift(shift);
+    setSelectedEmployeeId(shift.employee_id);
+    setEditModalOpen(true);
   }
 
   const styles: Record<string, React.CSSProperties> = {
@@ -682,12 +860,12 @@ export default function ManagerSchedule() {
     const candCount = typeof r.candidate_count === "number" ? r.candidate_count : undefined;
     const rejSummary = r.rejection_summary;
 
+    const shiftsForThisRow = getShiftsForCoverageRow(r);
+
     return (
       <div
         key={`${d}-${r.label}-${index}`}
         style={styles.shift}
-        onClick={() => openAuditForShift(r)}
-        title="Click to view audit (why/why not)"
       >
         <div style={styles.metaRow}>
           <div style={styles.time}>
@@ -705,11 +883,74 @@ export default function ManagerSchedule() {
           {rejSummary && Object.keys(rejSummary).length > 0 && (
             <span>top reject: <strong>{sortedEntries(rejSummary)[0]?.[0]}</strong></span>
           )}
-          <span style={{ opacity: 0.65 }}>(click for audit)</span>
+          <span
+            style={{ opacity: 0.65, cursor: "pointer", textDecoration: "underline" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              openAuditForShift(r);
+            }}
+          >
+            (view audit)
+          </span>
         </div>
 
         <div style={styles.who}>
-          {names.length ? (
+          {shiftsForThisRow.length > 0 ? (
+            shiftsForThisRow.map((shift) => (
+              <div
+                key={shift.scheduled_shift_id}
+                style={{
+                  ...styles.name,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span title={shift.employee_name}>{shift.employee_name}</span>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button
+                    style={{
+                      fontSize: 11,
+                      padding: "4px 8px",
+                      borderRadius: 6,
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(37,99,235,0.3)",
+                      color: "#e9eaec",
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditModal(shift);
+                    }}
+                    title="Change employee"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    style={{
+                      fontSize: 11,
+                      padding: "4px 8px",
+                      borderRadius: 6,
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(239,68,68,0.3)",
+                      color: "#e9eaec",
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteShift(shift.scheduled_shift_id);
+                    }}
+                    title="Delete assignment"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : names.length > 0 ? (
             names.map((n) => (
               <div key={n} style={styles.name} title={n}>
                 {n}
@@ -719,6 +960,36 @@ export default function ManagerSchedule() {
             <div style={{ opacity: 0.6 }}>(none assigned)</div>
           )}
         </div>
+
+        {miss > 0 && runId && (
+          <button
+            style={{
+              marginTop: 8,
+              padding: "6px 12px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: "rgba(34,197,94,0.2)",
+              color: "#e9eaec",
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: 12,
+              width: "100%",
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setNewShift({
+                shift_date: normalizeDateKey(r.shift_date),
+                label: r.label,
+                start_time: r.start_time.substring(0, 5),
+                end_time: r.end_time.substring(0, 5),
+                employee_id: "",
+              });
+              setAddModalOpen(true);
+            }}
+          >
+            + Add Assignment
+          </button>
+        )}
       </div>
     );
   }
@@ -847,6 +1118,25 @@ export default function ManagerSchedule() {
         >
           {loading ? "Generating..." : "Generate Schedule"}
         </button>
+
+        {runId && (
+          <button
+            style={styles.btn}
+            onClick={() => {
+              setNewShift({
+                shift_date: "",
+                label: "",
+                start_time: "",
+                end_time: "",
+                employee_id: "",
+              });
+              setAddModalOpen(true);
+            }}
+            title="Manually add a shift assignment"
+          >
+            + Add Shift
+          </button>
+        )}
       </div>
 
       {/* View + Navigation */}
@@ -1135,6 +1425,225 @@ export default function ManagerSchedule() {
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* EDIT SHIFT MODAL */}
+      {editModalOpen && editingShift && (
+        <div
+          style={styles.overlay}
+          onClick={() => {
+            setEditModalOpen(false);
+            setEditingShift(null);
+            setSelectedEmployeeId("");
+          }}
+        >
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalTop}>
+              <div>
+                <div style={styles.modalTitle}>Edit Shift Assignment</div>
+                <div style={{ opacity: 0.8, marginTop: 6, fontSize: 13 }}>
+                  {editingShift.shift_date} · {editingShift.label} · {formatTime(editingShift.start_time)}–{formatTime(editingShift.end_time)}
+                </div>
+              </div>
+              <button
+                style={styles.closeBtn}
+                onClick={() => {
+                  setEditModalOpen(false);
+                  setEditingShift(null);
+                  setSelectedEmployeeId("");
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={styles.sectionTitle}>Assign to:</div>
+            <div style={{ maxHeight: "400px", overflowY: "auto", marginTop: 8 }}>
+              {employees.map((emp) => (
+                <div
+                  key={emp.employee_id}
+                  style={{
+                    ...styles.row,
+                    cursor: "pointer",
+                    background: selectedEmployeeId === emp.employee_id ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.04)",
+                  }}
+                  onClick={() => setSelectedEmployeeId(emp.employee_id)}
+                >
+                  <div style={{ fontWeight: 900 }}>
+                    {emp.name} <span style={{ opacity: 0.7, fontSize: 12 }}>({emp.email})</span>
+                  </div>
+                  {selectedEmployeeId === emp.employee_id && (
+                    <div style={{ ...styles.badge, ...styles.badgeGreen }}>SELECTED</div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button
+                style={styles.closeBtn}
+                onClick={() => {
+                  setEditModalOpen(false);
+                  setEditingShift(null);
+                  setSelectedEmployeeId("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                style={{
+                  ...styles.btn,
+                  opacity: selectedEmployeeId && !editLoading ? 1 : 0.5,
+                  cursor: selectedEmployeeId && !editLoading ? "pointer" : "not-allowed",
+                }}
+                onClick={handleEditShift}
+                disabled={!selectedEmployeeId || editLoading}
+              >
+                {editLoading ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD SHIFT MODAL */}
+      {addModalOpen && (
+        <div
+          style={styles.overlay}
+          onClick={() => {
+            setAddModalOpen(false);
+            setNewShift({
+              shift_date: "",
+              label: "",
+              start_time: "",
+              end_time: "",
+              employee_id: "",
+            });
+          }}
+        >
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalTop}>
+              <div>
+                <div style={styles.modalTitle}>Add Shift Assignment</div>
+                <div style={{ opacity: 0.8, marginTop: 6, fontSize: 13 }}>
+                  {newShift.shift_date && `${newShift.shift_date} · ${newShift.label} · ${newShift.start_time}–${newShift.end_time}`}
+                </div>
+              </div>
+              <button
+                style={styles.closeBtn}
+                onClick={() => {
+                  setAddModalOpen(false);
+                  setNewShift({
+                    shift_date: "",
+                    label: "",
+                    start_time: "",
+                    end_time: "",
+                    employee_id: "",
+                  });
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <div style={styles.sectionTitle}>Date (YYYY-MM-DD)</div>
+                <input
+                  type="date"
+                  value={newShift.shift_date}
+                  onChange={(e) => setNewShift({ ...newShift, shift_date: e.target.value })}
+                  style={styles.select}
+                />
+              </div>
+
+              <div>
+                <div style={styles.sectionTitle}>Label</div>
+                <input
+                  type="text"
+                  value={newShift.label}
+                  onChange={(e) => setNewShift({ ...newShift, label: e.target.value })}
+                  placeholder="Morning Shift"
+                  style={styles.select}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={styles.sectionTitle}>Start (HH:MM)</div>
+                  <input
+                    type="time"
+                    value={newShift.start_time}
+                    onChange={(e) => setNewShift({ ...newShift, start_time: e.target.value })}
+                    style={styles.select}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={styles.sectionTitle}>End (HH:MM)</div>
+                  <input
+                    type="time"
+                    value={newShift.end_time}
+                    onChange={(e) => setNewShift({ ...newShift, end_time: e.target.value })}
+                    style={styles.select}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div style={styles.sectionTitle}>Assign to:</div>
+                <div style={{ maxHeight: "300px", overflowY: "auto", marginTop: 8 }}>
+                  {employees.map((emp) => (
+                    <div
+                      key={emp.employee_id}
+                      style={{
+                        ...styles.row,
+                        cursor: "pointer",
+                        background: newShift.employee_id === emp.employee_id ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.04)",
+                      }}
+                      onClick={() => setNewShift({ ...newShift, employee_id: emp.employee_id })}
+                    >
+                      <div style={{ fontWeight: 900 }}>
+                        {emp.name} <span style={{ opacity: 0.7, fontSize: 12 }}>({emp.email})</span>
+                      </div>
+                      {newShift.employee_id === emp.employee_id && (
+                        <div style={{ ...styles.badge, ...styles.badgeGreen }}>SELECTED</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button
+                style={styles.closeBtn}
+                onClick={() => {
+                  setAddModalOpen(false);
+                  setNewShift({
+                    shift_date: "",
+                    label: "",
+                    start_time: "",
+                    end_time: "",
+                    employee_id: "",
+                  });
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                style={{
+                  ...styles.btn,
+                  opacity: newShift.shift_date && newShift.label && newShift.start_time && newShift.end_time && newShift.employee_id && !addLoading ? 1 : 0.5,
+                  cursor: newShift.shift_date && newShift.label && newShift.start_time && newShift.end_time && newShift.employee_id && !addLoading ? "pointer" : "not-allowed",
+                }}
+                onClick={handleAddShift}
+                disabled={!newShift.shift_date || !newShift.label || !newShift.start_time || !newShift.end_time || !newShift.employee_id || addLoading}
+              >
+                {addLoading ? "Adding..." : "Add"}
+              </button>
+            </div>
           </div>
         </div>
       )}

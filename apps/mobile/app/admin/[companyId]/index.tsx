@@ -240,20 +240,6 @@ export default function CompanyAdmin() {
           </Pressable>
         </Link>
 
-        <Link href={`/admin/${companyIdStr}/schedules`} asChild>
-          <Pressable
-            disabled={!isValidCompanyId}
-            style={{
-              padding: 12,
-              borderRadius: 10,
-              backgroundColor: !isValidCompanyId ? "#6b7280" : "#2563eb",
-              opacity: !isValidCompanyId ? 0.7 : 1,
-            }}
-          >
-            <Text style={{ color: "white", fontWeight: "700" }}>View schedules</Text>
-          </Pressable>
-        </Link>
-
         <Pressable
           onPress={() => {
             setLogoFailed(false);

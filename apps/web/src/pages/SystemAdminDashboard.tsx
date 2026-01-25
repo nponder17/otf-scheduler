@@ -432,7 +432,7 @@ export default function SystemAdminDashboard() {
         {/* Selected Company Details */}
         {selectedCompany && (
           <div style={styles.section}>
-            <div style={styles.sectionTitle} style={{ marginBottom: 16 }}>
+            <div style={{ ...styles.sectionTitle, marginBottom: 16 }}>
               {selectedCompany.name}
             </div>
 

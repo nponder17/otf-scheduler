@@ -129,6 +129,25 @@ def _date_to_dow(date_obj: date) -> int:
     return (python_dow + 1) % 7
 
 
+def _payweek_start(d: date) -> date:
+    """
+    Return the Saturday that starts the pay week containing date d.
+    Pay week starts on Saturday, ends on Sunday.
+    Python weekday: Mon=0, Tue=1, ..., Sat=5, Sun=6
+    """
+    # Calculate days since last Saturday (or 0 if it's Saturday)
+    days_since_sat = (d.weekday() - 5) % 7
+    return d - timedelta(days=days_since_sat)
+
+
+def _payweek_id(d: date, anchor: date) -> int:
+    """
+    Stable integer week index based on Saturday-start weeks.
+    Returns the pay week number (0-based) for date d relative to anchor.
+    """
+    return (_payweek_start(d) - _payweek_start(anchor)).days // 7
+
+
 # ========== Data Structures ==========
 class AssignedShift:
     """Represents an assigned shift with time range."""
@@ -460,15 +479,16 @@ def generate_month_schedule(
             if consecutive_count > MAX_CONSECUTIVE_DAYS:
                 reasons.append(f"too_many_consecutive_days_{consecutive_count}")
         
-        # Weekend constraint: Each employee must work exactly ONE weekend day (Saturday OR Sunday, not both)
+        # Weekend constraint (PAY-WEEK SCOPED):
+        # Exactly one weekend day per pay week (Sat or Sun), and never both.
         if _is_weekend(dow):
-            # Check if employee already has a weekend shift on the opposite day
-            for existing_shift in assigned_shifts_by_emp.get(eid, []):
-                existing_dow = _date_to_dow(existing_shift.shift_date)  # Convert Python weekday to DB convention
-                if _is_weekend(existing_dow) and existing_dow != dow:
-                    # Employee already has a weekend shift on the other day
-                    reasons.append("already_has_weekend_shift")
-                    break
+            wk = _payweek_id(shift_date, PAYWEEK_ANCHOR)
+            already = weekend_day_by_emp_week.get(eid, {}).get(wk)
+            
+            if already is not None:
+                # They already have a weekend assignment this pay week.
+                # Block scheduling them on Sat or Sun again (same day or other day).
+                reasons.append("already_has_weekend_day_this_payweek")
         
         return (len(reasons) == 0, reasons)
     

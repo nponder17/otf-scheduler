@@ -787,7 +787,7 @@ def generate_month_schedule(
         assigned = assigned_shifts_map.get(key, 0)
         unassigned = int(required_count) - assigned
         
-        if unassigned > 0:
+        if unassigned > 0 and len(ft_under_target_after_repair) > 0:
             # Find FT employees under target who can take this shift
             for ft_eid, ft_hours_needed in ft_under_target_after_repair:
                 if unassigned <= 0:
@@ -801,7 +801,8 @@ def generate_month_schedule(
                     shift_hours = _minutes_to_hours(e_m - s_m)
                     ft_after_weekly = (ft_current_total + shift_hours) / weeks_in_month
                     
-                    if ft_after_weekly <= FT_MIN_HOURS_PER_WEEK + 10:
+                    # More lenient: allow up to 40h/week (was 30+10=40, but let's be explicit)
+                    if ft_after_weekly <= 40.0:
                         # Assign the shift
                         scheduled_shifts.append((ft_eid, shift_date, dow, label, s_m, e_m))
                         
@@ -812,6 +813,13 @@ def generate_month_schedule(
                         
                         assigned_shifts_map[key] = assigned_shifts_map.get(key, 0) + 1
                         unassigned -= 1
+                        
+                        # Update the employee's status in the list (recalculate if they're still under)
+                        ft_new_total = _minutes_to_hours(minutes_by_emp.get(ft_eid, 0))
+                        ft_new_weekly = ft_new_total / weeks_in_month
+                        if ft_new_weekly >= FT_MIN_HOURS_PER_WEEK:
+                            # Remove from list if they've reached target
+                            ft_under_target_after_repair = [(e, h) for e, h in ft_under_target_after_repair if e != ft_eid]
     
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints

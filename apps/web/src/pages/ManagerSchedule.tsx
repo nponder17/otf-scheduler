@@ -146,6 +146,7 @@ export default function ManagerSchedule() {
   });
 
   const [overwrite, setOverwrite] = useState(true);
+  const [generatorVersion, setGeneratorVersion] = useState<"v1" | "v2">("v2");
   const [runId, setRunId] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
@@ -307,6 +308,7 @@ export default function ManagerSchedule() {
           month_start: monthStart,
           month_end: monthEnd,
           overwrite,
+          generator_version: generatorVersion,
         }),
       });
 
@@ -1128,6 +1130,28 @@ export default function ManagerSchedule() {
           <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
           <span style={{ opacity: 0.85 }}>Overwrite</span>
         </label>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", marginBottom: 4, opacity: 0.85, fontSize: 14 }}>
+            Generator Version:
+          </label>
+          <select
+            value={generatorVersion}
+            onChange={(e) => setGeneratorVersion(e.target.value as "v1" | "v2")}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 6,
+              border: "1px solid #444",
+              backgroundColor: "#1a1a1a",
+              color: "#e9eaec",
+              fontSize: 14,
+              width: "100%",
+            }}
+          >
+            <option value="v1">v1 (Original - Simple)</option>
+            <option value="v2">v2 (Enhanced - Hard/Soft Constraints)</option>
+          </select>
+        </div>
 
         <button
           style={{ ...styles.btn, ...(canGenerate ? {} : styles.btnDisabled) }}

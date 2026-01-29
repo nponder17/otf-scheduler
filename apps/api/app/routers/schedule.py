@@ -18,6 +18,7 @@ class ScheduleGenerateRequest(BaseModel):
     month_start: date
     month_end: date
     overwrite: bool = False
+    generator_version: str = "v1"  # "v1" for original, "v2" for new enhanced generator
 
 
 class ShiftUpdateRequest(BaseModel):
@@ -35,10 +36,14 @@ class ShiftCreateRequest(BaseModel):
 
 @router.post("/generate")
 def generate_schedule(req: ScheduleGenerateRequest, db: Session = Depends(get_db)):
-    from app.services.schedule_generator import generate_month_schedule
-
     if req.month_end < req.month_start:
         raise HTTPException(status_code=400, detail="month_end must be >= month_start")
+
+    # Choose generator version
+    if req.generator_version == "v2":
+        from app.services.schedule_generator_v2 import generate_month_schedule
+    else:
+        from app.services.schedule_generator import generate_month_schedule
 
     run_id = generate_month_schedule(
         db=db,
@@ -48,7 +53,10 @@ def generate_schedule(req: ScheduleGenerateRequest, db: Session = Depends(get_db
         month_end=req.month_end,
         overwrite=req.overwrite,
     )
-    return {"schedule_run_id": str(run_id)}
+    return {
+        "schedule_run_id": str(run_id),
+        "generator_version": req.generator_version,
+    }
 
 
 @router.get("/{run_id}")

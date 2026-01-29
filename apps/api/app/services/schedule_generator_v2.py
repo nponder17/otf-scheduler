@@ -46,10 +46,10 @@ WEIGHT_PREFERRED_TIME = 10
 WEIGHT_AVOID_CLOPEN = 20
 WEIGHT_CREATE_CLOPEN = -40
 WEIGHT_EXTRA_CONSECUTIVE_DAY = -15
-WEIGHT_FT_HOURS_REMAINING = 10  # Increased - per hour under target (weekly)
+WEIGHT_FT_HOURS_REMAINING = 20  # Increased further - per hour under target (weekly)
 WEIGHT_FT_HOURS_OVER = -4  # Per hour over target
-WEIGHT_PT_HOURS_TOWARD_IDEAL = 5  # Increased - per hour toward ideal
-WEIGHT_PT_HOURS_OVER_IDEAL = -10  # Increased penalty - per hour over ideal
+WEIGHT_PT_HOURS_TOWARD_IDEAL = 5  # Per hour toward ideal
+WEIGHT_PT_HOURS_OVER_IDEAL = -15  # Increased penalty - per hour over ideal
 
 
 # ========== Helper Functions ==========

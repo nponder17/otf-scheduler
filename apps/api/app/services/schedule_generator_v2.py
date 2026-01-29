@@ -119,6 +119,16 @@ def _is_sunday(day_of_week: int) -> bool:
     return day_of_week == 0
 
 
+def _date_to_dow(date_obj: date) -> int:
+    """
+    Convert Python date.weekday() (0=Mon, 6=Sun) to database convention (0=Sun, 6=Sat).
+    Database convention: 0=Sunday, 1=Monday, ..., 6=Saturday
+    """
+    python_dow = date_obj.weekday()  # 0=Mon, 1=Tue, ..., 6=Sun
+    # Convert: Mon(0)->1, Tue(1)->2, ..., Sat(5)->6, Sun(6)->0
+    return (python_dow + 1) % 7
+
+
 # ========== Data Structures ==========
 class AssignedShift:
     """Represents an assigned shift with time range."""
@@ -146,17 +156,19 @@ class AssignedShift:
         if self.shift_date < other_date:
             # This shift is on earlier day
             # Check if this shift's end overlaps with next day's start
-            # Convert to absolute timeline: this_end to (next_day_start + 24*60)
-            this_end_abs = self.end_m
-            other_start_abs = other_start_m + (24 * 60)
+            # Convert to absolute timeline: day_index * 1440 + minutes
+            days_diff = (other_date - self.shift_date).days
+            this_end_abs = (days_diff - 1) * (24 * 60) + self.end_m
+            other_start_abs = days_diff * (24 * 60) + other_start_m
             # They overlap if this_end > other_start (in absolute timeline)
-            return this_end_abs > other_start_m
+            return this_end_abs > other_start_abs
         else:
             # This shift is on later day
             # Check if other shift's end overlaps with this shift's start
-            other_end_abs = other_end_m
-            this_start_abs = self.start_m + (24 * 60)
-            return other_end_abs > self.start_m
+            days_diff = (self.shift_date - other_date).days
+            other_end_abs = (days_diff - 1) * (24 * 60) + other_end_m
+            this_start_abs = days_diff * (24 * 60) + self.start_m
+            return other_end_abs > this_start_abs
 
 
 class EmployeeProfile:
@@ -423,8 +435,11 @@ def generate_month_schedule(
                 if rest_minutes < MIN_REST_BETWEEN_SHIFTS_MINUTES:
                     reasons.append("insufficient_rest_cross_day")
             elif days_diff == -1:
-                # Previous day - check rest from this day's end to previous day's start
-                rest_minutes = (24 * 60 - end_m) + existing_shift.start_m
+                # Previous day - check rest from previous day's end to this day's start
+                # Previous day's shift ended at existing_shift.end_m
+                # This day's shift starts at start_m
+                # Rest = (24*60 - existing_shift.end_m) + start_m
+                rest_minutes = (24 * 60 - existing_shift.end_m) + start_m
                 if rest_minutes < MIN_REST_BETWEEN_SHIFTS_MINUTES:
                     reasons.append("insufficient_rest_cross_day")
         
@@ -449,7 +464,7 @@ def generate_month_schedule(
         if _is_weekend(dow):
             # Check if employee already has a weekend shift on the opposite day
             for existing_shift in assigned_shifts_by_emp.get(eid, []):
-                existing_dow = existing_shift.shift_date.weekday()
+                existing_dow = _date_to_dow(existing_shift.shift_date)  # Convert Python weekday to DB convention
                 if _is_weekend(existing_dow) and existing_dow != dow:
                     # Employee already has a weekend shift on the other day
                     reasons.append("already_has_weekend_shift")

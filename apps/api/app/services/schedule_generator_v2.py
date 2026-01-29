@@ -757,6 +757,20 @@ def generate_month_schedule(
     
     # ========== PHASE B: Fill Unassigned Shifts (FT Priority) ==========
     # After repair swaps, try to assign any remaining unassigned shifts to FT employees under target
+    # Recalculate ft_under_target after repair swaps
+    ft_under_target_after_repair: List[Tuple[UUID, float]] = []
+    for eid, profile in profiles.items():
+        current_hours_total = _minutes_to_hours(minutes_by_emp.get(eid, 0))
+        current_weekly_hours = current_hours_total / weeks_in_month
+        
+        if profile.is_full_time():
+            if current_weekly_hours < FT_MIN_HOURS_PER_WEEK:
+                hours_needed = (FT_MIN_HOURS_PER_WEEK - current_weekly_hours) * weeks_in_month
+                ft_under_target_after_repair.append((eid, hours_needed))
+    
+    # Sort by need (most needed first)
+    ft_under_target_after_repair.sort(key=lambda x: x[1], reverse=True)
+    
     # Build a map of assigned shifts by (date, start_m, end_m) to check what's missing
     assigned_shifts_map: Dict[Tuple[date, int, int], int] = {}
     for eid, shift_date, dow, label, s_m, e_m in scheduled_shifts:
@@ -775,7 +789,7 @@ def generate_month_schedule(
         
         if unassigned > 0:
             # Find FT employees under target who can take this shift
-            for ft_eid, ft_hours_needed in ft_under_target:
+            for ft_eid, ft_hours_needed in ft_under_target_after_repair:
                 if unassigned <= 0:
                     break
                 
@@ -798,11 +812,6 @@ def generate_month_schedule(
                         
                         assigned_shifts_map[key] = assigned_shifts_map.get(key, 0) + 1
                         unassigned -= 1
-                        
-                        # Update ft_under_target list (remove if now at target)
-                        ft_current_weekly_after = (ft_current_total + shift_hours) / weeks_in_month
-                        if ft_current_weekly_after >= FT_MIN_HOURS_PER_WEEK:
-                            ft_under_target = [(e, h) for e, h in ft_under_target if e != ft_eid]
     
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints

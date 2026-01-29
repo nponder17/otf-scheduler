@@ -37,19 +37,19 @@ FT_MIN_HOURS_PER_WEEK = 30
 OPTIMIZATION_SWAP_ATTEMPTS = 200
 
 # Scoring weights
-WEIGHT_WEEKEND_PREF_MATCH = 25
-WEIGHT_WEEKEND_PREF_OPPOSITE = -10
-WEIGHT_WEEKEND_PREF_EITHER = 15  # Bonus for "either" when specific preferences are satisfied
+WEIGHT_WEEKEND_PREF_MATCH = 50  # Increased to prioritize specific preferences
+WEIGHT_WEEKEND_PREF_OPPOSITE = -20  # Increased penalty for opposite
+WEIGHT_WEEKEND_PREF_EITHER = 10  # Reduced - "either" should be lower priority than specific prefs
 WEIGHT_WEEKEND_PREF_WEEKLY_PENALTY = -30  # Penalty if employee gets zero preferred weekend shifts
 WEIGHT_PREFERRED_DAY = 10
 WEIGHT_PREFERRED_TIME = 10
 WEIGHT_AVOID_CLOPEN = 20
 WEIGHT_CREATE_CLOPEN = -40
 WEIGHT_EXTRA_CONSECUTIVE_DAY = -15
-WEIGHT_FT_HOURS_REMAINING = 3  # Per hour under target
+WEIGHT_FT_HOURS_REMAINING = 10  # Increased - per hour under target (weekly)
 WEIGHT_FT_HOURS_OVER = -4  # Per hour over target
-WEIGHT_PT_HOURS_TOWARD_IDEAL = 2  # Per hour toward ideal
-WEIGHT_PT_HOURS_OVER_IDEAL = -3  # Per hour over ideal
+WEIGHT_PT_HOURS_TOWARD_IDEAL = 5  # Increased - per hour toward ideal
+WEIGHT_PT_HOURS_OVER_IDEAL = -10  # Increased penalty - per hour over ideal
 
 
 # ========== Helper Functions ==========
@@ -490,38 +490,52 @@ def generate_month_schedule(
                 score += WEIGHT_WEEKEND_PREF_OPPOSITE
                 reasons.append("weekend_pref_opposite_sun_wants_sat")
         
-        # Hour target scoring
+        # Hour target scoring (weekly-based)
+        # Calculate what the weekly hours would be after this shift
+        shift_hours = _minutes_to_hours(end_m - start_m)
+        current_hours_total = _minutes_to_hours(current_minutes)
+        hours_after_shift = current_hours_total + shift_hours
+        
+        # Estimate weeks in month (rough approximation)
+        # Better: calculate actual week boundaries, but for now use average
+        weeks_in_month = 4.33  # Average weeks per month
+        
         if profile.is_full_time():
-            current_hours = _minutes_to_hours(current_minutes)
+            current_weekly_hours = current_hours_total / weeks_in_month
+            weekly_hours_after = hours_after_shift / weeks_in_month
             target_hours = FT_MIN_HOURS_PER_WEEK
-            hours_remaining = target_hours - current_hours
-            if hours_remaining > 0:
-                # Under target - bonus for each hour
-                bonus = hours_remaining * WEIGHT_FT_HOURS_REMAINING * shift_hours
+            
+            if weekly_hours_after < target_hours:
+                # Under target - strong bonus
+                hours_under = target_hours - weekly_hours_after
+                bonus = hours_under * WEIGHT_FT_HOURS_REMAINING * shift_hours
                 score += bonus
-                reasons.append(f"ft_hours_needed_{hours_remaining:.1f}h")
+                reasons.append(f"ft_hours_needed_{hours_under:.1f}h_weekly")
             else:
-                # Over target - penalty
-                hours_over = -hours_remaining
-                penalty = hours_over * WEIGHT_FT_HOURS_OVER * shift_hours
-                score += penalty
-                reasons.append(f"ft_hours_over_{hours_over:.1f}h")
+                # At or over target - small penalty if way over
+                hours_over = weekly_hours_after - target_hours
+                if hours_over > 5:  # Only penalize if significantly over
+                    penalty = (hours_over - 5) * WEIGHT_FT_HOURS_OVER * shift_hours
+                    score += penalty
+                    reasons.append(f"ft_hours_over_{hours_over:.1f}h_weekly")
         elif profile.is_part_time() and profile.ideal_hours_weekly:
-            current_hours = _minutes_to_hours(current_minutes)
+            current_weekly_hours = current_hours_total / weeks_in_month
+            weekly_hours_after = hours_after_shift / weeks_in_month
             ideal = profile.ideal_hours_weekly
-            if current_hours < ideal:
+            
+            if weekly_hours_after < ideal:
                 # Toward ideal - bonus
-                hours_toward = min(shift_hours, ideal - current_hours)
+                hours_toward = min(shift_hours, (ideal - current_weekly_hours) * weeks_in_month)
                 bonus = hours_toward * WEIGHT_PT_HOURS_TOWARD_IDEAL
                 score += bonus
                 reasons.append(f"pt_toward_ideal_{hours_toward:.1f}h")
             else:
-                # Over ideal - penalty
-                hours_over = current_hours + shift_hours - ideal
+                # Over ideal - strong penalty
+                hours_over = weekly_hours_after - ideal
                 if hours_over > 0:
-                    penalty = hours_over * WEIGHT_PT_HOURS_OVER_IDEAL
+                    penalty = hours_over * WEIGHT_PT_HOURS_OVER_IDEAL * shift_hours
                     score += penalty
-                    reasons.append(f"pt_over_ideal_{hours_over:.1f}h")
+                    reasons.append(f"pt_over_ideal_{hours_over:.1f}h_weekly")
         
         # Clopen detection (close then open)
         shifts_by_date = shifts_by_date_by_emp.get(eid, {})
@@ -597,9 +611,11 @@ def generate_month_schedule(
         for e in employees:
             valid, hard_reasons = check_hard_constraints(e.employee_id, shift_date, dow, s_m, e_m)
             if valid:
+                # Calculate score with current minutes (before this shift)
+                current_mins = minutes_by_emp.get(e.employee_id, 0)
                 score, soft_reasons = calculate_score(
                     e.employee_id, shift_date, dow, s_m, e_m, label,
-                    minutes_by_emp.get(e.employee_id, 0)
+                    current_mins
                 )
                 candidates.append((e.employee_id, score, soft_reasons))
             else:
@@ -656,20 +672,82 @@ def generate_month_schedule(
         )
     
     # ========== PHASE B: Repair Pass (Hour Targets) ==========
-    # Identify FT employees under target
-    ft_under_target: List[UUID] = []
-    for eid, profile in profiles.items():
-        if profile.is_full_time():
-            current_hours = _minutes_to_hours(minutes_by_emp.get(eid, 0))
-            if current_hours < FT_MIN_HOURS_PER_WEEK:
-                ft_under_target.append(eid)
+    # Identify FT employees under target and PT employees over ideal
+    weeks_in_month = 4.33
+    ft_under_target: List[Tuple[UUID, float]] = []  # (eid, hours_needed)
+    pt_over_ideal: List[Tuple[UUID, float]] = []  # (eid, hours_over)
     
-    # Try to swap PT shifts to FT employees
-    # (Simplified - in production, you'd want more sophisticated swap logic)
+    for eid, profile in profiles.items():
+        current_hours_total = _minutes_to_hours(minutes_by_emp.get(eid, 0))
+        current_weekly_hours = current_hours_total / weeks_in_month
+        
+        if profile.is_full_time():
+            if current_weekly_hours < FT_MIN_HOURS_PER_WEEK:
+                hours_needed = (FT_MIN_HOURS_PER_WEEK - current_weekly_hours) * weeks_in_month
+                ft_under_target.append((eid, hours_needed))
+        elif profile.is_part_time() and profile.ideal_hours_weekly:
+            if current_weekly_hours > profile.ideal_hours_weekly:
+                hours_over = (current_weekly_hours - profile.ideal_hours_weekly) * weeks_in_month
+                pt_over_ideal.append((eid, hours_over))
+    
+    # Try to swap: PT employees who are over ideal -> FT employees who are under target
+    # Sort by need (most needed first)
+    ft_under_target.sort(key=lambda x: x[1], reverse=True)
+    pt_over_ideal.sort(key=lambda x: x[1], reverse=True)
+    
+    swap_count = 0
+    max_repair_swaps = 50  # Limit repair swaps
+    
+    for ft_eid, ft_hours_needed in ft_under_target:
+        if swap_count >= max_repair_swaps:
+            break
+        
+        # Find PT employee with shifts we can swap
+        for pt_eid, pt_hours_over in pt_over_ideal:
+            if swap_count >= max_repair_swaps:
+                break
+            
+            # Find shifts assigned to PT that FT could take
+            for i, (eid, shift_date, dow, label, s_m, e_m) in enumerate(scheduled_shifts):
+                if eid != pt_eid:
+                    continue
+                
+                # Check if FT can take this shift
+                valid, _ = check_hard_constraints(ft_eid, shift_date, dow, s_m, e_m)
+                if valid:
+                    # Check if PT can be removed (would they still be over ideal?)
+                    shift_hours = _minutes_to_hours(e_m - s_m)
+                    pt_new_total = _minutes_to_hours(minutes_by_emp.get(pt_eid, 0)) - shift_hours
+                    pt_new_weekly = pt_new_total / weeks_in_month
+                    pt_profile = profiles.get(pt_eid)
+                    
+                    # Only swap if PT would still be reasonable (not too far under ideal)
+                    if pt_profile and pt_profile.ideal_hours_weekly:
+                        if pt_new_weekly >= pt_profile.ideal_hours_weekly * 0.8:  # At least 80% of ideal
+                            # Swap the shift
+                            scheduled_shifts[i] = (ft_eid, shift_date, dow, label, s_m, e_m)
+                            
+                            # Update tracking
+                            minutes_by_emp[ft_eid] = minutes_by_emp.get(ft_eid, 0) + (e_m - s_m)
+                            minutes_by_emp[pt_eid] = minutes_by_emp.get(pt_eid, 0) - (e_m - s_m)
+                            
+                            # Update assigned shifts tracking
+                            assigned_shifts_by_emp[ft_eid].append(AssignedShift(shift_date, s_m, e_m, label))
+                            assigned_shifts_by_emp[pt_eid] = [s for s in assigned_shifts_by_emp[pt_eid] 
+                                                              if not (s.shift_date == shift_date and s.start_m == s_m and s.end_m == e_m)]
+                            
+                            shifts_by_date_by_emp[ft_eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
+                            if shift_date in shifts_by_date_by_emp[pt_eid]:
+                                shifts_by_date_by_emp[pt_eid][shift_date] = [s for s in shifts_by_date_by_emp[pt_eid][shift_date]
+                                                                              if not (s.start_m == s_m and s.end_m == e_m)]
+                            
+                            swap_count += 1
+                            break
     
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints
-    for _ in range(OPTIMIZATION_SWAP_ATTEMPTS):
+    improved_swaps = 0
+    for attempt in range(OPTIMIZATION_SWAP_ATTEMPTS):
         if len(scheduled_shifts) < 2:
             break
         
@@ -687,13 +765,55 @@ def generate_month_schedule(
         valid2, _ = check_hard_constraints(eid1, date2, dow2, s_m2, e_m2)
         
         if valid1 and valid2:
-            # Calculate score change
-            # (Simplified - in production, recalculate full scores)
-            # For now, just swap if valid
-            scheduled_shifts[idx1] = (eid2, date1, dow1, label1, s_m1, e_m1)
-            scheduled_shifts[idx2] = (eid1, date2, dow2, label2, s_m2, e_m2)
+            # Calculate scores before swap
+            mins1_before = minutes_by_emp.get(eid1, 0)
+            mins2_before = minutes_by_emp.get(eid2, 0)
             
-            # Update tracking (simplified - would need full recalculation)
+            score1_before, _ = calculate_score(eid1, date1, dow1, s_m1, e_m1, label1, mins1_before)
+            score2_before, _ = calculate_score(eid2, date2, dow2, s_m2, e_m2, label2, mins2_before)
+            total_before = score1_before + score2_before
+            
+            # Calculate scores after swap (adjust minutes)
+            shift1_hours = e_m1 - s_m1
+            shift2_hours = e_m2 - s_m2
+            mins1_after = mins1_before - shift1_hours + shift2_hours
+            mins2_after = mins2_before - shift2_hours + shift1_hours
+            
+            score1_after, _ = calculate_score(eid1, date2, dow2, s_m2, e_m2, label2, mins1_after)
+            score2_after, _ = calculate_score(eid2, date1, dow1, s_m1, e_m1, label1, mins2_after)
+            total_after = score1_after + score2_after
+            
+            # Only swap if score improves
+            if total_after > total_before:
+                # Perform swap
+                scheduled_shifts[idx1] = (eid2, date1, dow1, label1, s_m1, e_m1)
+                scheduled_shifts[idx2] = (eid1, date2, dow2, label2, s_m2, e_m2)
+                
+                # Update tracking
+                minutes_by_emp[eid1] = mins1_after
+                minutes_by_emp[eid2] = mins2_after
+                
+                # Update assigned shifts (remove old, add new)
+                assigned_shifts_by_emp[eid1] = [s for s in assigned_shifts_by_emp[eid1] 
+                                                if not (s.shift_date == date1 and s.start_m == s_m1 and s.end_m == e_m1)]
+                assigned_shifts_by_emp[eid1].append(AssignedShift(date2, s_m2, e_m2, label2))
+                
+                assigned_shifts_by_emp[eid2] = [s for s in assigned_shifts_by_emp[eid2] 
+                                                if not (s.shift_date == date2 and s.start_m == s_m2 and s.end_m == e_m2)]
+                assigned_shifts_by_emp[eid2].append(AssignedShift(date1, s_m1, e_m1, label1))
+                
+                # Update shifts_by_date
+                if date1 in shifts_by_date_by_emp[eid1]:
+                    shifts_by_date_by_emp[eid1][date1] = [s for s in shifts_by_date_by_emp[eid1][date1]
+                                                          if not (s.start_m == s_m1 and s.end_m == e_m1)]
+                if date2 in shifts_by_date_by_emp[eid2]:
+                    shifts_by_date_by_emp[eid2][date2] = [s for s in shifts_by_date_by_emp[eid2][date2]
+                                                          if not (s.start_m == s_m2 and s.end_m == e_m2)]
+                
+                shifts_by_date_by_emp[eid1].setdefault(date2, []).append(AssignedShift(date2, s_m2, e_m2, label2))
+                shifts_by_date_by_emp[eid2].setdefault(date1, []).append(AssignedShift(date1, s_m1, e_m1, label1))
+                
+                improved_swaps += 1
     
     # ========== Write to Database ==========
     for eid, shift_date, dow, label, s_m, e_m in scheduled_shifts:

@@ -1298,6 +1298,24 @@ def generate_month_schedule(
                 shifts_by_date_by_emp[eid1].setdefault(date2, []).append(AssignedShift(date2, s_m2, e_m2, label2))
                 shifts_by_date_by_emp[eid2].setdefault(date1, []).append(AssignedShift(date1, s_m1, e_m1, label1))
                 
+                # Update weekend tracking per pay week
+                if _is_weekend(dow2):
+                    wk2 = _payweek_id(date2, PAYWEEK_ANCHOR)
+                    weekend_day_by_emp_week[eid1][wk2] = dow2
+                    # Remove old weekend assignment if it was a weekend
+                    if _is_weekend(dow1):
+                        wk1_old = _payweek_id(date1, PAYWEEK_ANCHOR)
+                        if wk1_old in weekend_day_by_emp_week[eid1]:
+                            del weekend_day_by_emp_week[eid1][wk1_old]
+                if _is_weekend(dow1):
+                    wk1 = _payweek_id(date1, PAYWEEK_ANCHOR)
+                    weekend_day_by_emp_week[eid2][wk1] = dow1
+                    # Remove old weekend assignment if it was a weekend
+                    if _is_weekend(dow2):
+                        wk2_old = _payweek_id(date2, PAYWEEK_ANCHOR)
+                        if wk2_old in weekend_day_by_emp_week[eid2]:
+                            del weekend_day_by_emp_week[eid2][wk2_old]
+                
                 improved_swaps += 1
     
     # ========== Write to Database ==========

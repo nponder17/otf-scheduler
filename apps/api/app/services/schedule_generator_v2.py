@@ -896,7 +896,7 @@ def generate_month_schedule(
     # ========== PHASE B: Weekend Preference Swap Pass ==========
     # Try to swap weekend shifts to better honor preferences
     # Example: Charity prefers Sunday but got Saturday - swap with someone who prefers Saturday but got Sunday
-    weeks_in_month = 4.33
+    weeks_in_month = max(4.0, ((month_end - month_start).days + 1) / 7.0)
     weekend_swap_count = 0
     max_weekend_swaps = 50
     

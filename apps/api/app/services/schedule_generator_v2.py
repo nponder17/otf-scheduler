@@ -696,7 +696,7 @@ def generate_month_schedule(
     pt_over_ideal.sort(key=lambda x: x[1], reverse=True)
     
     swap_count = 0
-    max_repair_swaps = 50  # Limit repair swaps
+    max_repair_swaps = 100  # Increased limit for repair swaps
     
     for ft_eid, ft_hours_needed in ft_under_target:
         if swap_count >= max_repair_swaps:
@@ -708,10 +708,13 @@ def generate_month_schedule(
                 break
             
             # Find shifts assigned to PT that FT could take
-            for i, (eid, shift_date, dow, label, s_m, e_m) in enumerate(scheduled_shifts):
-                if eid != pt_eid:
-                    continue
-                
+            # Sort by shift hours (larger shifts first) to maximize impact
+            pt_shifts = [(i, shift_date, dow, label, s_m, e_m) 
+                        for i, (eid, shift_date, dow, label, s_m, e_m) in enumerate(scheduled_shifts)
+                        if eid == pt_eid]
+            pt_shifts.sort(key=lambda x: x[5] - x[4], reverse=True)  # Sort by duration (end - start)
+            
+            for i, shift_date, dow, label, s_m, e_m in pt_shifts:
                 # Check if FT can take this shift
                 valid, _ = check_hard_constraints(ft_eid, shift_date, dow, s_m, e_m)
                 if valid:
@@ -723,7 +726,7 @@ def generate_month_schedule(
                     
                     # Only swap if PT would still be reasonable (not too far under ideal)
                     if pt_profile and pt_profile.ideal_hours_weekly:
-                        # More lenient: allow swap if PT would be at least 70% of ideal (was 80%)
+                        # More lenient: allow swap if PT would be at least 70% of ideal
                         if pt_new_weekly >= pt_profile.ideal_hours_weekly * 0.7:
                             # Also check: would this help FT get closer to target?
                             ft_current_total = _minutes_to_hours(minutes_by_emp.get(ft_eid, 0))

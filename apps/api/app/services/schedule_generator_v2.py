@@ -946,9 +946,36 @@ def generate_month_schedule(
         if not swapped:
             break  # No more swaps possible
     
-    # ========== PHASE B: Ensure Every Employee Has One Weekend Shift ==========
+    # ========== PHASE B: Fix Weekend Shifts ==========
     # Hard constraint: Every employee must work exactly ONE weekend day (Saturday OR Sunday)
+    # First, remove employees who have multiple weekend shifts (keep only one)
+    # Then, assign weekend shifts to employees who have none
     weeks_in_month = 4.33
+    
+    # Step 1: Remove excess weekend shifts (employees should have exactly 1)
+    for eid in emp_ids:
+        weekend_shifts = [(idx, shift_date, dow, label, s_m, e_m) 
+                         for idx, (eid_check, shift_date, dow, label, s_m, e_m) in enumerate(scheduled_shifts)
+                         if eid_check == eid and _is_weekend(dow)]
+        
+        if len(weekend_shifts) > 1:
+            # Employee has multiple weekend shifts - keep only the first one, remove the rest
+            # Sort by date to keep the earliest one
+            weekend_shifts.sort(key=lambda x: x[1])
+            for idx, shift_date, dow, label, s_m, e_m in weekend_shifts[1:]:
+                # Remove this shift
+                scheduled_shifts[idx] = None  # Mark for removal
+                minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) - (e_m - s_m)
+                assigned_shifts_by_emp[eid] = [s for s in assigned_shifts_by_emp[eid] 
+                                               if not (s.shift_date == shift_date and s.start_m == s_m and s.end_m == e_m)]
+                if shift_date in shifts_by_date_by_emp[eid]:
+                    shifts_by_date_by_emp[eid][shift_date] = [s for s in shifts_by_date_by_emp[eid][shift_date]
+                                                              if not (s.start_m == s_m and s.end_m == e_m)]
+    
+    # Remove None entries
+    scheduled_shifts = [s for s in scheduled_shifts if s is not None]
+    
+    # Step 2: Assign weekend shifts to employees who have none
     for eid, profile in profiles.items():
         # Check if employee has a weekend shift
         has_weekend = False
@@ -959,8 +986,12 @@ def generate_month_schedule(
         
         if not has_weekend:
             # Employee doesn't have a weekend shift - find one for them
-            # First, try to find an unassigned weekend shift
+            # Try all weekend shifts in demand
+            assigned_weekend = False
             for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
+                if assigned_weekend:
+                    break
+                    
                 if not _is_weekend(int(day_of_week)):
                     continue
                 
@@ -983,6 +1014,7 @@ def generate_month_schedule(
                         minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) + (e_m - s_m)
                         assigned_shifts_by_emp[eid].append(AssignedShift(shift_date, s_m, e_m, label))
                         shifts_by_date_by_emp[eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
+                        assigned_weekend = True
                         break
     
     # ========== PHASE B: Optimization Pass (Swaps) ==========

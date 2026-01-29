@@ -915,10 +915,14 @@ def generate_month_schedule(
                 continue
             
             profile1 = profiles.get(eid1)
-            if not profile1 or not profile1.weekend_preference or profile1.weekend_preference == "either":
+            if not profile1 or not profile1.weekend_preference:
                 continue
             
             pref1 = profile1.weekend_preference
+            # Skip if employee has "either" and already has a weekend shift (they're flexible)
+            if pref1 == "either":
+                continue  # "Either" employees are flexible, don't need to swap
+            
             # Check if this shift matches their preference
             matches_pref1 = (pref1 == "saturday" and _is_saturday(dow1)) or (pref1 == "sunday" and _is_sunday(dow1))
             if matches_pref1:
@@ -933,17 +937,32 @@ def generate_month_schedule(
                     continue
                 
                 profile2 = profiles.get(eid2)
-                if not profile2 or not profile2.weekend_preference or profile2.weekend_preference == "either":
+                if not profile2 or not profile2.weekend_preference:
                     continue
                 
                 pref2 = profile2.weekend_preference
                 
-                # Check if swapping would improve both preferences
-                # eid1 wants pref1 but has dow1 (opposite)
-                # eid2 wants pref2 but has dow2 (opposite)
-                # If dow1 matches pref2 and dow2 matches pref1, swap!
-                if ((pref1 == "saturday" and _is_sunday(dow1) and pref2 == "sunday" and _is_saturday(dow2)) or
-                    (pref1 == "sunday" and _is_saturday(dow1) and pref2 == "saturday" and _is_sunday(dow2))):
+                # Check if swapping would improve preferences
+                # Case 1: eid1 wants specific day but has opposite, eid2 has "either" and has the day eid1 wants
+                # Case 2: Both have specific preferences and are swapped
+                if pref2 == "either":
+                    # eid2 has "either" - they can take any weekend day
+                    # If eid2 has the day that eid1 wants, swap!
+                    if ((pref1 == "saturday" and _is_sunday(dow1) and _is_saturday(dow2)) or
+                        (pref1 == "sunday" and _is_saturday(dow1) and _is_sunday(dow2))):
+                        # This is a valid swap - eid1 gets their preferred day, eid2 gets the other day
+                        pass  # Will check constraints below
+                    else:
+                        continue
+                elif pref2 != "either":
+                    # Both have specific preferences
+                    # Check if swapping would improve both preferences
+                    # eid1 wants pref1 but has dow1 (opposite)
+                    # eid2 wants pref2 but has dow2 (opposite)
+                    # If dow1 matches pref2 and dow2 matches pref1, swap!
+                    if not ((pref1 == "saturday" and _is_sunday(dow1) and pref2 == "sunday" and _is_saturday(dow2)) or
+                            (pref1 == "sunday" and _is_saturday(dow1) and pref2 == "saturday" and _is_sunday(dow2))):
+                        continue
                     
                     # Check if both can take the swapped shift (hard constraints)
                     # Temporarily remove the shifts being swapped

@@ -825,6 +825,114 @@ def generate_month_schedule(
                             # Remove from list if they've reached target
                             ft_under_target_after_repair = [(e, h) for e, h in ft_under_target_after_repair if e != ft_eid]
     
+    # ========== PHASE B: Weekend Preference Swap Pass ==========
+    # Try to swap weekend shifts to better honor preferences
+    # Example: Charity prefers Sunday but got Saturday - swap with someone who prefers Saturday but got Sunday
+    weeks_in_month = 4.33
+    weekend_swap_count = 0
+    max_weekend_swaps = 50
+    
+    for attempt in range(max_weekend_swaps):
+        if weekend_swap_count >= max_weekend_swaps:
+            break
+        
+        swapped = False
+        # Find two employees with weekend shifts that could be swapped
+        for i, (eid1, shift_date1, dow1, label1, s_m1, e_m1) in enumerate(scheduled_shifts):
+            if not _is_weekend(dow1):
+                continue
+            
+            profile1 = profiles.get(eid1)
+            if not profile1 or not profile1.weekend_preference or profile1.weekend_preference == "either":
+                continue
+            
+            pref1 = profile1.weekend_preference
+            # Check if this shift matches their preference
+            matches_pref1 = (pref1 == "saturday" and _is_saturday(dow1)) or (pref1 == "sunday" and _is_sunday(dow1))
+            if matches_pref1:
+                continue  # Already has preferred day, skip
+            
+            # Find another employee with a weekend shift on the opposite day
+            for j, (eid2, shift_date2, dow2, label2, s_m2, e_m2) in enumerate(scheduled_shifts):
+                if i >= j:  # Don't swap with self or earlier shifts
+                    continue
+                
+                if not _is_weekend(dow2):
+                    continue
+                
+                profile2 = profiles.get(eid2)
+                if not profile2 or not profile2.weekend_preference or profile2.weekend_preference == "either":
+                    continue
+                
+                pref2 = profile2.weekend_preference
+                
+                # Check if swapping would improve both preferences
+                # eid1 wants pref1 but has dow1 (opposite)
+                # eid2 wants pref2 but has dow2 (opposite)
+                # If dow1 matches pref2 and dow2 matches pref1, swap!
+                if ((pref1 == "saturday" and _is_sunday(dow1) and pref2 == "sunday" and _is_saturday(dow2)) or
+                    (pref1 == "sunday" and _is_saturday(dow1) and pref2 == "saturday" and _is_sunday(dow2))):
+                    
+                    # Check if both can take the swapped shift (hard constraints)
+                    valid1, _ = check_hard_constraints(eid1, shift_date2, dow2, s_m2, e_m2)
+                    valid2, _ = check_hard_constraints(eid2, shift_date1, dow1, s_m1, e_m1)
+                    
+                    if valid1 and valid2:
+                        # Also check hour targets - don't swap if it would hurt FT employees
+                        e1_current = _minutes_to_hours(minutes_by_emp.get(eid1, 0))
+                        e2_current = _minutes_to_hours(minutes_by_emp.get(eid2, 0))
+                        shift1_hours = _minutes_to_hours(e_m1 - s_m1)
+                        shift2_hours = _minutes_to_hours(e_m2 - s_m2)
+                        
+                        # Net change: e1 loses shift1_hours, gains shift2_hours
+                        e1_after = e1_current - shift1_hours + shift2_hours
+                        e2_after = e2_current - shift2_hours + shift1_hours
+                        e1_after_weekly = e1_after / weeks_in_month
+                        e2_after_weekly = e2_after / weeks_in_month
+                        
+                        # Only swap if it doesn't hurt FT employees
+                        profile1_ft = profile1.is_full_time()
+                        profile2_ft = profile2.is_full_time()
+                        
+                        ok_to_swap = True
+                        if profile1_ft and e1_after_weekly < FT_MIN_HOURS_PER_WEEK:
+                            ok_to_swap = False
+                        if profile2_ft and e2_after_weekly < FT_MIN_HOURS_PER_WEEK:
+                            ok_to_swap = False
+                        
+                        if ok_to_swap:
+                            # Perform the swap
+                            scheduled_shifts[i] = (eid1, shift_date2, dow2, label2, s_m2, e_m2)
+                            scheduled_shifts[j] = (eid2, shift_date1, dow1, label1, s_m1, e_m1)
+                            
+                            # Update tracking
+                            minutes_by_emp[eid1] = int(e1_after * 60)
+                            minutes_by_emp[eid2] = int(e2_after * 60)
+                            
+                            # Update assigned shifts tracking
+                            assigned_shifts_by_emp[eid1] = [s for s in assigned_shifts_by_emp[eid1] 
+                                                           if not (s.shift_date == shift_date1 and s.start_m == s_m1 and s.end_m == e_m1)]
+                            assigned_shifts_by_emp[eid1].append(AssignedShift(shift_date2, s_m2, e_m2, label2))
+                            
+                            assigned_shifts_by_emp[eid2] = [s for s in assigned_shifts_by_emp[eid2] 
+                                                           if not (s.shift_date == shift_date2 and s.start_m == s_m2 and s.end_m == e_m2)]
+                            assigned_shifts_by_emp[eid2].append(AssignedShift(shift_date1, s_m1, e_m1, label1))
+                            
+                            shifts_by_date_by_emp[eid1][shift_date1] = [s for s in shifts_by_date_by_emp[eid1].get(shift_date1, [])
+                                                                        if not (s.start_m == s_m1 and s.end_m == e_m1)]
+                            shifts_by_date_by_emp[eid1].setdefault(shift_date2, []).append(AssignedShift(shift_date2, s_m2, e_m2, label2))
+                            
+                            shifts_by_date_by_emp[eid2][shift_date2] = [s for s in shifts_by_date_by_emp[eid2].get(shift_date2, [])
+                                                                        if not (s.start_m == s_m2 and s.end_m == e_m2)]
+                            shifts_by_date_by_emp[eid2].setdefault(shift_date1, []).append(AssignedShift(shift_date1, s_m1, e_m1, label1))
+                            
+                            weekend_swap_count += 1
+                            swapped = True
+                            break  # Break inner loop
+        
+        if not swapped:
+            break  # No more swaps possible
+    
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints
     improved_swaps = 0

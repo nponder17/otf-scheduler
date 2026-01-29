@@ -705,21 +705,34 @@ def generate_month_schedule(
     
     # ========== PHASE B: Repair Pass (Hour Targets) ==========
     # Identify FT employees under target and PT employees over ideal
-    weeks_in_month = 4.33
+    # Calculate actual weekly hours using week buckets (Mon-Sun weeks)
+    weeks_in_month = max(4.0, ((month_end - month_start).days + 1) / 7.0)
+    
+    # Calculate hours per employee per week
+    hours_by_emp_by_week: Dict[UUID, Dict[int, float]] = defaultdict(lambda: defaultdict(float))
+    for eid, shift_date, dow, label, s_m, e_m in scheduled_shifts:
+        week_num = (shift_date - month_start).days // 7
+        shift_hours = _minutes_to_hours(e_m - s_m)
+        hours_by_emp_by_week[eid][week_num] += shift_hours
+    
     ft_under_target: List[Tuple[UUID, float]] = []  # (eid, hours_needed)
     pt_over_ideal: List[Tuple[UUID, float]] = []  # (eid, hours_over)
     
     for eid, profile in profiles.items():
-        current_hours_total = _minutes_to_hours(minutes_by_emp.get(eid, 0))
-        current_weekly_hours = current_hours_total / weeks_in_month
-        
+        # Check each week - FT employees need >= 30h average (or at least close)
         if profile.is_full_time():
-            if current_weekly_hours < FT_MIN_HOURS_PER_WEEK:
-                hours_needed = (FT_MIN_HOURS_PER_WEEK - current_weekly_hours) * weeks_in_month
+            weekly_hours_list = [hours_by_emp_by_week[eid].get(w, 0.0) for w in range(int(weeks_in_month) + 1)]
+            avg_weekly_hours = sum(weekly_hours_list) / max(1, len([h for h in weekly_hours_list if h > 0]))
+            min_weekly_hours = min(weekly_hours_list) if weekly_hours_list else 0.0
+            
+            # If average is below target OR any week is significantly below, mark as under target
+            if avg_weekly_hours < FT_MIN_HOURS_PER_WEEK or min_weekly_hours < FT_MIN_HOURS_PER_WEEK * 0.8:
+                hours_needed = (FT_MIN_HOURS_PER_WEEK - avg_weekly_hours) * weeks_in_month
                 ft_under_target.append((eid, hours_needed))
         elif profile.is_part_time() and profile.ideal_hours_weekly:
-            if current_weekly_hours > profile.ideal_hours_weekly:
-                hours_over = (current_weekly_hours - profile.ideal_hours_weekly) * weeks_in_month
+            avg_weekly_hours = sum(hours_by_emp_by_week[eid].values()) / max(1, len(hours_by_emp_by_week[eid]))
+            if avg_weekly_hours > profile.ideal_hours_weekly:
+                hours_over = (avg_weekly_hours - profile.ideal_hours_weekly) * weeks_in_month
                 pt_over_ideal.append((eid, hours_over))
     
     # Try to swap: PT employees who are over ideal -> FT employees who are under target
@@ -930,8 +943,21 @@ def generate_month_schedule(
                     (pref1 == "sunday" and _is_saturday(dow1) and pref2 == "saturday" and _is_sunday(dow2))):
                     
                     # Check if both can take the swapped shift (hard constraints)
+                    # Temporarily remove the shifts being swapped
+                    original_shift1 = assigned_shifts_by_emp[eid1].copy()
+                    original_shift2 = assigned_shifts_by_emp[eid2].copy()
+                    
+                    assigned_shifts_by_emp[eid1] = [s for s in assigned_shifts_by_emp[eid1] 
+                                                   if not (s.shift_date == shift_date1 and s.start_m == s_m1 and s.end_m == e_m1)]
+                    assigned_shifts_by_emp[eid2] = [s for s in assigned_shifts_by_emp[eid2] 
+                                                   if not (s.shift_date == shift_date2 and s.start_m == s_m2 and s.end_m == e_m2)]
+                    
                     valid1, _ = check_hard_constraints(eid1, shift_date2, dow2, s_m2, e_m2)
                     valid2, _ = check_hard_constraints(eid2, shift_date1, dow1, s_m1, e_m1)
+                    
+                    # Restore original shifts
+                    assigned_shifts_by_emp[eid1] = original_shift1
+                    assigned_shifts_by_emp[eid2] = original_shift2
                     
                     if valid1 and valid2:
                         # Also check hour targets - don't swap if it would hurt FT employees
@@ -1077,8 +1103,21 @@ def generate_month_schedule(
             continue
         
         # Check if swap is valid (hard constraints)
+        # Temporarily remove the shifts being swapped
+        original_shift1 = assigned_shifts_by_emp[eid1].copy()
+        original_shift2 = assigned_shifts_by_emp[eid2].copy()
+        
+        assigned_shifts_by_emp[eid1] = [s for s in assigned_shifts_by_emp[eid1] 
+                                        if not (s.shift_date == date1 and s.start_m == s_m1 and s.end_m == e_m1)]
+        assigned_shifts_by_emp[eid2] = [s for s in assigned_shifts_by_emp[eid2] 
+                                        if not (s.shift_date == date2 and s.start_m == s_m2 and s.end_m == e_m2)]
+        
         valid1, _ = check_hard_constraints(eid2, date1, dow1, s_m1, e_m1)
         valid2, _ = check_hard_constraints(eid1, date2, dow2, s_m2, e_m2)
+        
+        # Restore original shifts
+        assigned_shifts_by_emp[eid1] = original_shift1
+        assigned_shifts_by_emp[eid2] = original_shift2
         
         if valid1 and valid2:
             # Calculate scores before swap

@@ -158,36 +158,19 @@ class AssignedShift:
         self.label = label
     
     def overlaps_with(self, other_date: date, other_start_m: int, other_end_m: int) -> bool:
-        """Check if this shift overlaps with another shift (handles cross-day)."""
-        # If dates are more than 1 day apart, no overlap possible
-        days_diff = abs((self.shift_date - other_date).days)
-        if days_diff > 1:
-            return False
+        """
+        Check if this shift overlaps with another shift (handles cross-day).
+        Uses absolute timeline for correct overlap detection.
+        """
+        # Convert both shifts to absolute timeline (days since epoch * 1440 + minutes)
+        # Use a reference date (self.shift_date) as epoch
+        this_start_abs = self.start_m
+        this_end_abs = self.end_m
+        other_start_abs = (other_date - self.shift_date).days * (24 * 60) + other_start_m
+        other_end_abs = (other_date - self.shift_date).days * (24 * 60) + other_end_m
         
-        # Same day - simple overlap check
-        if days_diff == 0:
-            return _overlaps(self.start_m, self.end_m, other_start_m, other_end_m)
-        
-        # Adjacent days - check if shifts span midnight
-        # Day 1: shift ends at 23:00 (1380 min), Day 2: shift starts at 01:00 (60 min)
-        # These don't overlap if there's 2 hours between them
-        
-        if self.shift_date < other_date:
-            # This shift is on earlier day
-            # Check if this shift's end overlaps with next day's start
-            # Convert to absolute timeline: day_index * 1440 + minutes
-            days_diff = (other_date - self.shift_date).days
-            this_end_abs = (days_diff - 1) * (24 * 60) + self.end_m
-            other_start_abs = days_diff * (24 * 60) + other_start_m
-            # They overlap if this_end > other_start (in absolute timeline)
-            return this_end_abs > other_start_abs
-        else:
-            # This shift is on later day
-            # Check if other shift's end overlaps with this shift's start
-            days_diff = (self.shift_date - other_date).days
-            other_end_abs = (days_diff - 1) * (24 * 60) + other_end_m
-            this_start_abs = days_diff * (24 * 60) + self.start_m
-            return other_end_abs > this_start_abs
+        # Overlap if one starts before the other ends
+        return this_start_abs < other_end_abs and other_start_abs < this_end_abs
 
 
 class EmployeeProfile:
@@ -434,33 +417,29 @@ def generate_month_schedule(
         if shift_length > MAX_SHIFT_LENGTH_MINUTES:
             reasons.append(f"shift_too_long_{shift_length}min")
         
-        # Minimum rest between shifts check
+        # Minimum rest between shifts check (using absolute timeline)
         for existing_shift in assigned_shifts_by_emp.get(eid, []):
-            # Calculate time between shifts
-            days_diff = (shift_date - existing_shift.shift_date).days
-            if days_diff == 0:
-                # Same day - check if there's enough rest
-                if existing_shift.end_m < start_m:
-                    rest_minutes = start_m - existing_shift.end_m
-                    if rest_minutes < MIN_REST_BETWEEN_SHIFTS_MINUTES:
-                        reasons.append("insufficient_rest_same_day")
-                elif start_m < existing_shift.start_m:
-                    rest_minutes = existing_shift.start_m - end_m
-                    if rest_minutes < MIN_REST_BETWEEN_SHIFTS_MINUTES:
-                        reasons.append("insufficient_rest_same_day")
-            elif days_diff == 1:
-                # Next day - check rest from previous day's end to this day's start
-                rest_minutes = (24 * 60 - existing_shift.end_m) + start_m
-                if rest_minutes < MIN_REST_BETWEEN_SHIFTS_MINUTES:
-                    reasons.append("insufficient_rest_cross_day")
-            elif days_diff == -1:
-                # Previous day - check rest from previous day's end to this day's start
-                # Previous day's shift ended at existing_shift.end_m
-                # This day's shift starts at start_m
-                # Rest = (24*60 - existing_shift.end_m) + start_m
-                rest_minutes = (24 * 60 - existing_shift.end_m) + start_m
-                if rest_minutes < MIN_REST_BETWEEN_SHIFTS_MINUTES:
-                    reasons.append("insufficient_rest_cross_day")
+            # Convert both shifts to absolute timeline
+            existing_end_abs = (existing_shift.shift_date - shift_date).days * (24 * 60) + existing_shift.end_m
+            this_start_abs = start_m
+            
+            # Calculate rest: gap between earlier end and later start
+            if existing_end_abs < this_start_abs:
+                # Existing shift ends before this one starts
+                rest_minutes = this_start_abs - existing_end_abs
+            else:
+                # This shift starts before existing one ends (overlap case, handled separately)
+                # But check rest from this shift's end to existing shift's start
+                this_end_abs = end_m
+                existing_start_abs = (existing_shift.shift_date - shift_date).days * (24 * 60) + existing_shift.start_m
+                if this_end_abs < existing_start_abs:
+                    rest_minutes = existing_start_abs - this_end_abs
+                else:
+                    # They overlap, rest is 0 (overlap check should catch this)
+                    rest_minutes = 0
+            
+            if rest_minutes < MIN_REST_BETWEEN_SHIFTS_MINUTES:
+                reasons.append("insufficient_rest")
         
         # Max consecutive days check
         shifts_by_date = shifts_by_date_by_emp.get(eid, {})
@@ -594,13 +573,17 @@ def generate_month_schedule(
             # Check if they closed the previous day
             prev_date = shift_date - timedelta(days=1)
             if prev_date in shifts_by_date:
-                for prev_shift in shifts_by_date[prev_date]:
-                    if _get_shift_type(prev_shift.label, prev_shift.start_m, prev_shift.end_m) == "close":
-                        score += WEIGHT_CREATE_CLOPEN
-                        reasons.append("creates_clopen")
-                    else:
-                        score += WEIGHT_AVOID_CLOPEN
-                        reasons.append("avoids_clopen")
+                # Check if any previous day shift was a close
+                closed_prev_day = any(
+                    _get_shift_type(prev_shift.label, prev_shift.start_m, prev_shift.end_m) == "close"
+                    for prev_shift in shifts_by_date[prev_date]
+                )
+                if closed_prev_day:
+                    score += WEIGHT_CREATE_CLOPEN
+                    reasons.append("creates_clopen")
+                else:
+                    score += WEIGHT_AVOID_CLOPEN
+                    reasons.append("avoids_clopen")
         
         # Consecutive days penalty
         shifts_by_date = shifts_by_date_by_emp.get(eid, {})
@@ -733,7 +716,7 @@ def generate_month_schedule(
     # Calculate hours per employee per week
     hours_by_emp_by_week: Dict[UUID, Dict[int, float]] = defaultdict(lambda: defaultdict(float))
     for eid, shift_date, dow, label, s_m, e_m in scheduled_shifts:
-        week_num = (shift_date - month_start).days // 7
+        week_num = _payweek_id(shift_date, PAYWEEK_ANCHOR)
         shift_hours = _minutes_to_hours(e_m - s_m)
         hours_by_emp_by_week[eid][week_num] += shift_hours
     
@@ -1070,8 +1053,8 @@ def generate_month_schedule(
     for idx, (eid, shift_date, dow, label, s_m, e_m) in enumerate(scheduled_shifts):
         if _is_weekend(dow):
             # Get week number (weeks since month start)
-            week_num = (shift_date - month_start).days // 7
-            weekend_shifts_by_emp_week[eid][week_num].append(idx)
+            wk = _payweek_id(shift_date, PAYWEEK_ANCHOR)
+            weekend_shifts_by_emp_week[eid][wk].append(idx)
     
     # Remove excess weekend shifts (keep only one per week per employee)
     shifts_to_remove = set()

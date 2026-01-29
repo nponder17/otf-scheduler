@@ -524,9 +524,8 @@ def generate_month_schedule(
         current_hours_total = _minutes_to_hours(current_minutes)
         hours_after_shift = current_hours_total + shift_hours
         
-        # Estimate weeks in month (rough approximation)
-        # Better: calculate actual week boundaries, but for now use average
-        weeks_in_month = 4.33  # Average weeks per month
+        # Calculate weeks in month (based on actual days)
+        weeks_in_month = max(4.0, ((month_end - month_start).days + 1) / 7.0)
         
         if profile.is_full_time():
             current_weekly_hours = current_hours_total / weeks_in_month

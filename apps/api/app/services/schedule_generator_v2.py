@@ -804,39 +804,67 @@ def generate_month_schedule(
         assigned = assigned_shifts_map.get(key, 0)
         unassigned = int(required_count) - assigned
         
-        if unassigned > 0 and len(ft_under_target_after_repair) > 0:
-            # Find FT employees under target who can take this shift
-            for ft_eid, ft_hours_needed in ft_under_target_after_repair:
-                if unassigned <= 0:
-                    break
-                
-                # Check if FT can take this shift
-                valid, _ = check_hard_constraints(ft_eid, shift_date, dow, s_m, e_m)
-                if valid:
-                    # Check if adding this would help (not go way over)
-                    ft_current_total = _minutes_to_hours(minutes_by_emp.get(ft_eid, 0))
-                    shift_hours = _minutes_to_hours(e_m - s_m)
-                    ft_after_weekly = (ft_current_total + shift_hours) / weeks_in_month
+        if unassigned > 0:
+            # First priority: FT employees under target
+            if len(ft_under_target_after_repair) > 0:
+                for ft_eid, ft_hours_needed in ft_under_target_after_repair:
+                    if unassigned <= 0:
+                        break
                     
-                    # More lenient: allow up to 40h/week (was 30+10=40, but let's be explicit)
-                    if ft_after_weekly <= 40.0:
+                    # Check if FT can take this shift
+                    valid, _ = check_hard_constraints(ft_eid, shift_date, dow, s_m, e_m)
+                    if valid:
+                        # Check if adding this would help (not go way over)
+                        ft_current_total = _minutes_to_hours(minutes_by_emp.get(ft_eid, 0))
+                        shift_hours = _minutes_to_hours(e_m - s_m)
+                        ft_after_weekly = (ft_current_total + shift_hours) / weeks_in_month
+                        
+                        # More lenient: allow up to 40h/week
+                        if ft_after_weekly <= 40.0:
+                            # Assign the shift
+                            scheduled_shifts.append((ft_eid, shift_date, dow, label, s_m, e_m))
+                            
+                            # Update tracking
+                            minutes_by_emp[ft_eid] = minutes_by_emp.get(ft_eid, 0) + (e_m - s_m)
+                            assigned_shifts_by_emp[ft_eid].append(AssignedShift(shift_date, s_m, e_m, label))
+                            shifts_by_date_by_emp[ft_eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
+                            
+                            assigned_shifts_map[key] = assigned_shifts_map.get(key, 0) + 1
+                            unassigned -= 1
+                            
+                            # Update the employee's status in the list (recalculate if they're still under)
+                            ft_new_total = _minutes_to_hours(minutes_by_emp.get(ft_eid, 0))
+                            ft_new_weekly = ft_new_total / weeks_in_month
+                            if ft_new_weekly >= FT_MIN_HOURS_PER_WEEK:
+                                # Remove from list if they've reached target
+                                ft_under_target_after_repair = [(e, h) for e, h in ft_under_target_after_repair if e != ft_eid]
+            
+            # Second priority: Any employee (to fill remaining unassigned slots)
+            # This helps ensure all required_count positions are filled
+            if unassigned > 0:
+                for e in employees:
+                    if unassigned <= 0:
+                        break
+                    
+                    # Skip if already assigned to this shift
+                    already_assigned = sum(1 for eid_check, sd, _, _, sm, em in scheduled_shifts 
+                                          if eid_check == e.employee_id and sd == shift_date and sm == s_m and em == e_m)
+                    if already_assigned > 0:
+                        continue
+                    
+                    # Check if employee can take this shift
+                    valid, _ = check_hard_constraints(e.employee_id, shift_date, dow, s_m, e_m)
+                    if valid:
                         # Assign the shift
-                        scheduled_shifts.append((ft_eid, shift_date, dow, label, s_m, e_m))
+                        scheduled_shifts.append((e.employee_id, shift_date, dow, label, s_m, e_m))
                         
                         # Update tracking
-                        minutes_by_emp[ft_eid] = minutes_by_emp.get(ft_eid, 0) + (e_m - s_m)
-                        assigned_shifts_by_emp[ft_eid].append(AssignedShift(shift_date, s_m, e_m, label))
-                        shifts_by_date_by_emp[ft_eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
+                        minutes_by_emp[e.employee_id] = minutes_by_emp.get(e.employee_id, 0) + (e_m - s_m)
+                        assigned_shifts_by_emp[e.employee_id].append(AssignedShift(shift_date, s_m, e_m, label))
+                        shifts_by_date_by_emp[e.employee_id].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
                         
                         assigned_shifts_map[key] = assigned_shifts_map.get(key, 0) + 1
                         unassigned -= 1
-                        
-                        # Update the employee's status in the list (recalculate if they're still under)
-                        ft_new_total = _minutes_to_hours(minutes_by_emp.get(ft_eid, 0))
-                        ft_new_weekly = ft_new_total / weeks_in_month
-                        if ft_new_weekly >= FT_MIN_HOURS_PER_WEEK:
-                            # Remove from list if they've reached target
-                            ft_under_target_after_repair = [(e, h) for e, h in ft_under_target_after_repair if e != ft_eid]
     
     # ========== PHASE B: Weekend Preference Swap Pass ==========
     # Try to swap weekend shifts to better honor preferences

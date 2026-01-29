@@ -611,7 +611,8 @@ def generate_month_schedule(
     for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
         s_m = _to_minutes(start_time)
         e_m = _to_minutes(end_time)
-        dow = int(day_of_week)
+        # Calculate dow from shift_date to ensure consistency
+        dow = _date_to_dow(shift_date)
         key = (shift_date, label, s_m, e_m)
         
         count = 0
@@ -827,7 +828,8 @@ def generate_month_schedule(
     for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
         s_m = _to_minutes(start_time)
         e_m = _to_minutes(end_time)
-        dow = int(day_of_week)
+        # Calculate dow from shift_date to ensure consistency
+        dow = _date_to_dow(shift_date)
         key = (shift_date, s_m, e_m)
         
         assigned = assigned_shifts_map.get(key, 0)
@@ -1071,12 +1073,13 @@ def generate_month_schedule(
             if assigned_weekend:
                 break
                 
-            if not _is_weekend(int(day_of_week)):
+            # Calculate dow from shift_date to ensure consistency
+            dow = _date_to_dow(shift_date)
+            if not _is_weekend(dow):
                 continue
             
             s_m = _to_minutes(start_time)
             e_m = _to_minutes(end_time)
-            dow = int(day_of_week)
             
             # Check how many are already assigned
             assigned_count = sum(1 for eid_check, sd, _, _, sm, em in scheduled_shifts 

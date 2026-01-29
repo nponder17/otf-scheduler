@@ -491,8 +491,9 @@ def generate_month_schedule(
                 score += WEIGHT_WEEKEND_PREF_MATCH
                 reasons.append("weekend_pref_match_sun")
             elif pref == "either":
-                # "Either" should get weekend shifts, but with lower priority than specific preferences
-                # Give a small positive score to encourage weekend shifts for "either" employees
+                # "Either" employees should get weekend shifts (they'll take what's left after specific prefs)
+                # Give them a bonus for any weekend day, but lower than specific preferences
+                # This ensures they get assigned weekend shifts after people with specific preferences
                 score += WEIGHT_WEEKEND_PREF_EITHER
                 reasons.append("weekend_pref_either")
             elif pref == "saturday" and _is_sunday(dow):
@@ -944,6 +945,45 @@ def generate_month_schedule(
         
         if not swapped:
             break  # No more swaps possible
+    
+    # ========== PHASE B: Ensure Every Employee Has One Weekend Shift ==========
+    # Hard constraint: Every employee must work exactly ONE weekend day (Saturday OR Sunday)
+    weeks_in_month = 4.33
+    for eid, profile in profiles.items():
+        # Check if employee has a weekend shift
+        has_weekend = False
+        for eid_check, shift_date, dow, label, s_m, e_m in scheduled_shifts:
+            if eid_check == eid and _is_weekend(dow):
+                has_weekend = True
+                break
+        
+        if not has_weekend:
+            # Employee doesn't have a weekend shift - find one for them
+            # First, try to find an unassigned weekend shift
+            for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
+                if not _is_weekend(int(day_of_week)):
+                    continue
+                
+                s_m = _to_minutes(start_time)
+                e_m = _to_minutes(end_time)
+                dow = int(day_of_week)
+                
+                # Check how many are already assigned
+                assigned_count = sum(1 for eid_check, sd, _, _, sm, em in scheduled_shifts 
+                                    if sd == shift_date and sm == s_m and em == e_m)
+                
+                if assigned_count < int(required_count):
+                    # There's room - check if employee can take it
+                    valid, _ = check_hard_constraints(eid, shift_date, dow, s_m, e_m)
+                    if valid:
+                        # Assign the weekend shift
+                        scheduled_shifts.append((eid, shift_date, dow, label, s_m, e_m))
+                        
+                        # Update tracking
+                        minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) + (e_m - s_m)
+                        assigned_shifts_by_emp[eid].append(AssignedShift(shift_date, s_m, e_m, label))
+                        shifts_by_date_by_emp[eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
+                        break
     
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints

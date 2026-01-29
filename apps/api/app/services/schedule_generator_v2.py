@@ -506,9 +506,13 @@ def generate_month_schedule(
             target_hours = FT_MIN_HOURS_PER_WEEK
             
             if weekly_hours_after < target_hours:
-                # Under target - strong bonus
+                # Under target - VERY strong bonus (exponential to prioritize severely under)
                 hours_under = target_hours - weekly_hours_after
-                bonus = hours_under * WEIGHT_FT_HOURS_REMAINING * shift_hours
+                # Use exponential bonus: more under = much higher priority
+                # Increased multiplier: 1.0 + (hours_under * 1.0) for stronger effect
+                bonus_multiplier = 1.0 + (hours_under * 1.0)  # Stronger exponential factor
+                # Also multiply by a large base to ensure FT employees always win over PT when under target
+                bonus = hours_under * WEIGHT_FT_HOURS_REMAINING * shift_hours * bonus_multiplier * 2.0
                 score += bonus
                 reasons.append(f"ft_hours_needed_{hours_under:.1f}h_weekly")
             else:

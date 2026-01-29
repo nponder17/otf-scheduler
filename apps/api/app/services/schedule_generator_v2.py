@@ -1016,75 +1016,84 @@ def generate_month_schedule(
             break  # No more swaps possible
     
     # ========== PHASE B: Fix Weekend Shifts ==========
-    # Hard constraint: Every employee must work exactly ONE weekend day (Saturday OR Sunday)
-    # First, remove employees who have multiple weekend shifts (keep only one)
-    # Then, assign weekend shifts to employees who have none
-    weeks_in_month = 4.33
+    # Soft constraint: Try to ensure every employee works at least one weekend day
+    # But allow flexibility - remove excess weekend shifts, then try to assign to those with none
+    weeks_in_month = max(4.0, ((month_end - month_start).days + 1) / 7.0)
     
-    # Step 1: Remove excess weekend shifts (employees should have exactly 1)
-    for eid in emp_ids:
-        weekend_shifts = [(idx, shift_date, dow, label, s_m, e_m) 
-                         for idx, (eid_check, shift_date, dow, label, s_m, e_m) in enumerate(scheduled_shifts)
-                         if eid_check == eid and _is_weekend(dow)]
-        
-        if len(weekend_shifts) > 1:
-            # Employee has multiple weekend shifts - keep only the first one, remove the rest
-            # Sort by date to keep the earliest one
-            weekend_shifts.sort(key=lambda x: x[1])
-            for idx, shift_date, dow, label, s_m, e_m in weekend_shifts[1:]:
-                # Remove this shift
-                scheduled_shifts[idx] = None  # Mark for removal
-                minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) - (e_m - s_m)
-                assigned_shifts_by_emp[eid] = [s for s in assigned_shifts_by_emp[eid] 
-                                               if not (s.shift_date == shift_date and s.start_m == s_m and s.end_m == e_m)]
-                if shift_date in shifts_by_date_by_emp[eid]:
-                    shifts_by_date_by_emp[eid][shift_date] = [s for s in shifts_by_date_by_emp[eid][shift_date]
-                                                              if not (s.start_m == s_m and s.end_m == e_m)]
+    # Step 1: Remove excess weekend shifts (employees should have at most 1 per week)
+    # Count weekend shifts per employee per week
+    weekend_shifts_by_emp_week: Dict[UUID, Dict[int, List[int]]] = defaultdict(lambda: defaultdict(list))
+    for idx, (eid, shift_date, dow, label, s_m, e_m) in enumerate(scheduled_shifts):
+        if _is_weekend(dow):
+            # Get week number (weeks since month start)
+            week_num = (shift_date - month_start).days // 7
+            weekend_shifts_by_emp_week[eid][week_num].append(idx)
     
-    # Remove None entries
-    scheduled_shifts = [s for s in scheduled_shifts if s is not None]
+    # Remove excess weekend shifts (keep only one per week per employee)
+    shifts_to_remove = set()
+    for eid, week_shifts in weekend_shifts_by_emp_week.items():
+        for week_num, shift_indices in week_shifts.items():
+            if len(shift_indices) > 1:
+                # Keep the first one, mark others for removal
+                # Sort by date to keep earliest
+                shift_indices.sort(key=lambda idx: scheduled_shifts[idx][1])
+                for idx in shift_indices[1:]:
+                    shifts_to_remove.add(idx)
+                    eid_remove, shift_date, dow, label, s_m, e_m = scheduled_shifts[idx]
+                    minutes_by_emp[eid_remove] = minutes_by_emp.get(eid_remove, 0) - (e_m - s_m)
+                    assigned_shifts_by_emp[eid_remove] = [s for s in assigned_shifts_by_emp[eid_remove] 
+                                                         if not (s.shift_date == shift_date and s.start_m == s_m and s.end_m == e_m)]
+                    if shift_date in shifts_by_date_by_emp[eid_remove]:
+                        shifts_by_date_by_emp[eid_remove][shift_date] = [s for s in shifts_by_date_by_emp[eid_remove][shift_date]
+                                                                        if not (s.start_m == s_m and s.end_m == e_m)]
     
-    # Step 2: Assign weekend shifts to employees who have none
+    # Remove marked shifts
+    scheduled_shifts = [s for idx, s in enumerate(scheduled_shifts) if idx not in shifts_to_remove]
+    
+    # Step 2: Try to assign weekend shifts to employees who have none (soft target)
+    # Prioritize "either" employees and those with specific preferences who don't have weekend shifts yet
+    employees_without_weekend = []
     for eid, profile in profiles.items():
-        # Check if employee has a weekend shift
-        has_weekend = False
-        for eid_check, shift_date, dow, label, s_m, e_m in scheduled_shifts:
-            if eid_check == eid and _is_weekend(dow):
-                has_weekend = True
-                break
-        
+        # Check if employee has any weekend shift in the month
+        has_weekend = any(eid_check == eid and _is_weekend(dow) 
+                         for eid_check, shift_date, dow, label, s_m, e_m in scheduled_shifts)
         if not has_weekend:
-            # Employee doesn't have a weekend shift - find one for them
-            # Try all weekend shifts in demand
-            assigned_weekend = False
-            for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
-                if assigned_weekend:
-                    break
+            employees_without_weekend.append((eid, profile))
+    
+    # Sort: "either" employees first (they'll take what's left), then specific preferences
+    employees_without_weekend.sort(key=lambda x: (x[1].weekend_preference != "either", x[1].weekend_preference or ""))
+    
+    for eid, profile in employees_without_weekend:
+        # Try to find a weekend shift for this employee
+        assigned_weekend = False
+        for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
+            if assigned_weekend:
+                break
+                
+            if not _is_weekend(int(day_of_week)):
+                continue
+            
+            s_m = _to_minutes(start_time)
+            e_m = _to_minutes(end_time)
+            dow = int(day_of_week)
+            
+            # Check how many are already assigned
+            assigned_count = sum(1 for eid_check, sd, _, _, sm, em in scheduled_shifts 
+                                if sd == shift_date and sm == s_m and em == e_m)
+            
+            if assigned_count < int(required_count):
+                # There's room - check if employee can take it
+                valid, _ = check_hard_constraints(eid, shift_date, dow, s_m, e_m)
+                if valid:
+                    # Assign the weekend shift
+                    scheduled_shifts.append((eid, shift_date, dow, label, s_m, e_m))
                     
-                if not _is_weekend(int(day_of_week)):
-                    continue
-                
-                s_m = _to_minutes(start_time)
-                e_m = _to_minutes(end_time)
-                dow = int(day_of_week)
-                
-                # Check how many are already assigned
-                assigned_count = sum(1 for eid_check, sd, _, _, sm, em in scheduled_shifts 
-                                    if sd == shift_date and sm == s_m and em == e_m)
-                
-                if assigned_count < int(required_count):
-                    # There's room - check if employee can take it
-                    valid, _ = check_hard_constraints(eid, shift_date, dow, s_m, e_m)
-                    if valid:
-                        # Assign the weekend shift
-                        scheduled_shifts.append((eid, shift_date, dow, label, s_m, e_m))
-                        
-                        # Update tracking
-                        minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) + (e_m - s_m)
-                        assigned_shifts_by_emp[eid].append(AssignedShift(shift_date, s_m, e_m, label))
-                        shifts_by_date_by_emp[eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
-                        assigned_weekend = True
-                        break
+                    # Update tracking
+                    minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) + (e_m - s_m)
+                    assigned_shifts_by_emp[eid].append(AssignedShift(shift_date, s_m, e_m, label))
+                    shifts_by_date_by_emp[eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
+                    assigned_weekend = True
+                    break
     
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints

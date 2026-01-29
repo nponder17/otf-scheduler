@@ -37,8 +37,8 @@ FT_MIN_HOURS_PER_WEEK = 30
 OPTIMIZATION_SWAP_ATTEMPTS = 200
 
 # Scoring weights
-WEIGHT_WEEKEND_PREF_MATCH = 100  # Significantly increased to strongly prioritize specific preferences
-WEIGHT_WEEKEND_PREF_OPPOSITE = -50  # Increased penalty for opposite
+WEIGHT_WEEKEND_PREF_MATCH = 200  # Very high - weekend preferences are critical
+WEIGHT_WEEKEND_PREF_OPPOSITE = -100  # Very high penalty for opposite - should almost never happen
 WEIGHT_WEEKEND_PREF_EITHER = 5  # Reduced further - "either" should be much lower priority than specific prefs
 WEIGHT_WEEKEND_PREF_WEEKLY_PENALTY = -50  # Increased penalty if employee gets zero preferred weekend shifts
 WEIGHT_PREFERRED_DAY = 10

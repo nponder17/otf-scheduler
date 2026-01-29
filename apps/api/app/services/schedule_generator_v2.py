@@ -948,26 +948,28 @@ def generate_month_schedule(
                 # Check if swapping would improve preferences
                 # Case 1: eid1 wants specific day but has opposite, eid2 has "either" and has the day eid1 wants
                 # Case 2: Both have specific preferences and are swapped
+                # Check if swapping would improve preferences
+                should_swap = False
                 if pref2 == "either":
                     # eid2 has "either" - they can take any weekend day
                     # If eid2 has the day that eid1 wants, swap!
                     if ((pref1 == "saturday" and _is_sunday(dow1) and _is_saturday(dow2)) or
                         (pref1 == "sunday" and _is_saturday(dow1) and _is_sunday(dow2))):
-                        # This is a valid swap - eid1 gets their preferred day, eid2 gets the other day
-                        pass  # Will check constraints below
-                    else:
-                        continue
-                elif pref2 != "either":
+                        should_swap = True
+                else:
                     # Both have specific preferences
                     # Check if swapping would improve both preferences
                     # eid1 wants pref1 but has dow1 (opposite)
                     # eid2 wants pref2 but has dow2 (opposite)
                     # If dow1 matches pref2 and dow2 matches pref1, swap!
-                    if not ((pref1 == "saturday" and _is_sunday(dow1) and pref2 == "sunday" and _is_saturday(dow2)) or
-                            (pref1 == "sunday" and _is_saturday(dow1) and pref2 == "saturday" and _is_sunday(dow2))):
-                        continue
-                    
-                    # Check if both can take the swapped shift (hard constraints)
+                    if ((pref1 == "saturday" and _is_sunday(dow1) and pref2 == "sunday" and _is_saturday(dow2)) or
+                        (pref1 == "sunday" and _is_saturday(dow1) and pref2 == "saturday" and _is_sunday(dow2))):
+                        should_swap = True
+                
+                if not should_swap:
+                    continue
+                
+                # Check if both can take the swapped shift (hard constraints)
                     # Temporarily remove the shifts being swapped
                     original_shift1 = assigned_shifts_by_emp[eid1].copy()
                     original_shift2 = assigned_shifts_by_emp[eid2].copy()
@@ -1056,10 +1058,10 @@ def generate_month_schedule(
             wk = _payweek_id(shift_date, PAYWEEK_ANCHOR)
             weekend_shifts_by_emp_week[eid][wk].append(idx)
     
-    # Remove excess weekend shifts (keep only one per week per employee)
+    # Remove excess weekend shifts (keep only one per pay week per employee)
     shifts_to_remove = set()
     for eid, week_shifts in weekend_shifts_by_emp_week.items():
-        for week_num, shift_indices in week_shifts.items():
+        for wk, shift_indices in week_shifts.items():
             if len(shift_indices) > 1:
                 # Keep the first one, mark others for removal
                 # Sort by date to keep earliest
@@ -1073,55 +1075,141 @@ def generate_month_schedule(
                     if shift_date in shifts_by_date_by_emp[eid_remove]:
                         shifts_by_date_by_emp[eid_remove][shift_date] = [s for s in shifts_by_date_by_emp[eid_remove][shift_date]
                                                                         if not (s.start_m == s_m and s.end_m == e_m)]
+                    # Remove from weekend tracking
+                    wk_remove = _payweek_id(shift_date, PAYWEEK_ANCHOR)
+                    if wk_remove in weekend_day_by_emp_week[eid_remove]:
+                        del weekend_day_by_emp_week[eid_remove][wk_remove]
     
     # Remove marked shifts
     scheduled_shifts = [s for idx, s in enumerate(scheduled_shifts) if idx not in shifts_to_remove]
     
-    # Step 2: Try to assign weekend shifts to employees who have none (soft target)
-    # Prioritize "either" employees and those with specific preferences who don't have weekend shifts yet
-    employees_without_weekend = []
-    for eid, profile in profiles.items():
-        # Check if employee has any weekend shift in the month
-        has_weekend = any(eid_check == eid and _is_weekend(dow) 
-                         for eid_check, shift_date, dow, label, s_m, e_m in scheduled_shifts)
-        if not has_weekend:
-            employees_without_weekend.append((eid, profile))
+    # Step 2: Ensure every employee has exactly one weekend day per pay week
+    # Find all pay weeks in the month
+    all_week_ids = set()
+    for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
+        dow = _date_to_dow(shift_date)
+        if _is_weekend(dow):
+            wk = _payweek_id(shift_date, PAYWEEK_ANCHOR)
+            all_week_ids.add(wk)
     
-    # Sort: "either" employees first (they'll take what's left), then specific preferences
-    employees_without_weekend.sort(key=lambda x: (x[1].weekend_preference != "either", x[1].weekend_preference or ""))
-    
-    for eid, profile in employees_without_weekend:
-        # Try to find a weekend shift for this employee
-        assigned_weekend = False
+    # For each pay week, find employees missing a weekend day
+    for wk in sorted(all_week_ids):
+        missing_employees = []
+        for eid in emp_ids:
+            if weekend_day_by_emp_week.get(eid, {}).get(wk) is None:
+                missing_employees.append(eid)
+        
+        if not missing_employees:
+            continue
+        
+        # Calculate unmet demand per weekend day for this pay week
+        need_sat = defaultdict(int)  # {shift_date: count}
+        need_sun = defaultdict(int)
+        
         for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
-            if assigned_weekend:
-                break
-                
-            # Calculate dow from shift_date to ensure consistency
             dow = _date_to_dow(shift_date)
             if not _is_weekend(dow):
+                continue
+            
+            wk_demand = _payweek_id(shift_date, PAYWEEK_ANCHOR)
+            if wk_demand != wk:
                 continue
             
             s_m = _to_minutes(start_time)
             e_m = _to_minutes(end_time)
             
-            # Check how many are already assigned
+            # Count how many are already assigned
             assigned_count = sum(1 for eid_check, sd, _, _, sm, em in scheduled_shifts 
                                 if sd == shift_date and sm == s_m and em == e_m)
             
-            if assigned_count < int(required_count):
-                # There's room - check if employee can take it
-                valid, _ = check_hard_constraints(eid, shift_date, dow, s_m, e_m)
-                if valid:
-                    # Assign the weekend shift
-                    scheduled_shifts.append((eid, shift_date, dow, label, s_m, e_m))
-                    
-                    # Update tracking
-                    minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) + (e_m - s_m)
-                    assigned_shifts_by_emp[eid].append(AssignedShift(shift_date, s_m, e_m, label))
-                    shifts_by_date_by_emp[eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
-                    assigned_weekend = True
+            unmet = int(required_count) - assigned_count
+            if unmet > 0:
+                if dow == 6:  # Saturday
+                    need_sat[shift_date] += unmet
+                else:  # Sunday
+                    need_sun[shift_date] += unmet
+        
+        # Sort missing employees by preference priority
+        # Priority: specific preferences first (Saturday, then Sunday), then "either"
+        missing_with_prefs = []
+        for eid in missing_employees:
+            profile = profiles.get(eid)
+            pref = profile.weekend_preference if profile else None
+            if pref == "saturday":
+                priority = 1
+            elif pref == "sunday":
+                priority = 2
+            else:  # "either" or None
+                priority = 3
+            missing_with_prefs.append((priority, eid, pref))
+        
+        missing_with_prefs.sort(key=lambda x: x[0])
+        
+        # Assign weekend shifts to missing employees
+        for priority, eid, pref in missing_with_prefs:
+            assigned_weekend = False
+            
+            # Determine preferred days based on preference and unmet demand
+            if pref == "saturday":
+                preferred_days = [6, 0]  # Try Saturday first, then Sunday
+            elif pref == "sunday":
+                preferred_days = [0, 6]  # Try Sunday first, then Saturday
+            else:  # "either" or None
+                # Try the day with more unmet demand first
+                total_sat_unmet = sum(need_sat.values())
+                total_sun_unmet = sum(need_sun.values())
+                if total_sat_unmet >= total_sun_unmet:
+                    preferred_days = [6, 0]  # Saturday first
+                else:
+                    preferred_days = [0, 6]  # Sunday first
+            
+            # Try to assign preferred day first
+            for target_dow in preferred_days:
+                if assigned_weekend:
                     break
+                
+                # Find weekend shifts for this pay week matching target_dow
+                for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
+                    if assigned_weekend:
+                        break
+                    
+                    dow = _date_to_dow(shift_date)
+                    if not _is_weekend(dow) or dow != target_dow:
+                        continue
+                    
+                    wk_demand = _payweek_id(shift_date, PAYWEEK_ANCHOR)
+                    if wk_demand != wk:
+                        continue
+                    
+                    s_m = _to_minutes(start_time)
+                    e_m = _to_minutes(end_time)
+                    
+                    # Check how many are already assigned
+                    assigned_count = sum(1 for eid_check, sd, _, _, sm, em in scheduled_shifts 
+                                        if sd == shift_date and sm == s_m and em == e_m)
+                    
+                    if assigned_count < int(required_count):
+                        # There's room - check if employee can take it
+                        valid, _ = check_hard_constraints(eid, shift_date, dow, s_m, e_m)
+                        if valid:
+                            # Assign the weekend shift
+                            scheduled_shifts.append((eid, shift_date, dow, label, s_m, e_m))
+                            
+                            # Update tracking
+                            minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) + (e_m - s_m)
+                            assigned_shift = AssignedShift(shift_date, s_m, e_m, label)
+                            assigned_shifts_by_emp[eid].append(assigned_shift)
+                            shifts_by_date_by_emp[eid].setdefault(shift_date, []).append(assigned_shift)
+                            weekend_day_by_emp_week[eid][wk] = dow
+                            
+                            # Update unmet demand
+                            if dow == 6:
+                                need_sat[shift_date] = max(0, need_sat.get(shift_date, 0) - 1)
+                            else:
+                                need_sun[shift_date] = max(0, need_sun.get(shift_date, 0) - 1)
+                            
+                            assigned_weekend = True
+                            break
     
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints

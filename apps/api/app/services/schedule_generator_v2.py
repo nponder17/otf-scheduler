@@ -755,6 +755,55 @@ def generate_month_schedule(
                                 swap_count += 1
                                 break
     
+    # ========== PHASE B: Fill Unassigned Shifts (FT Priority) ==========
+    # After repair swaps, try to assign any remaining unassigned shifts to FT employees under target
+    # Build a map of assigned shifts by (date, start_m, end_m) to check what's missing
+    assigned_shifts_map: Dict[Tuple[date, int, int], int] = {}
+    for eid, shift_date, dow, label, s_m, e_m in scheduled_shifts:
+        key = (shift_date, s_m, e_m)
+        assigned_shifts_map[key] = assigned_shifts_map.get(key, 0) + 1
+    
+    # Find unassigned shifts from demand
+    for shift_date, day_of_week, label, start_time, end_time, required_count in demand:
+        s_m = _to_minutes(start_time)
+        e_m = _to_minutes(end_time)
+        dow = int(day_of_week)
+        key = (shift_date, s_m, e_m)
+        
+        assigned = assigned_shifts_map.get(key, 0)
+        unassigned = int(required_count) - assigned
+        
+        if unassigned > 0:
+            # Find FT employees under target who can take this shift
+            for ft_eid, ft_hours_needed in ft_under_target:
+                if unassigned <= 0:
+                    break
+                
+                # Check if FT can take this shift
+                valid, _ = check_hard_constraints(ft_eid, shift_date, dow, s_m, e_m)
+                if valid:
+                    # Check if adding this would help (not go way over)
+                    ft_current_total = _minutes_to_hours(minutes_by_emp.get(ft_eid, 0))
+                    shift_hours = _minutes_to_hours(e_m - s_m)
+                    ft_after_weekly = (ft_current_total + shift_hours) / weeks_in_month
+                    
+                    if ft_after_weekly <= FT_MIN_HOURS_PER_WEEK + 10:
+                        # Assign the shift
+                        scheduled_shifts.append((ft_eid, shift_date, dow, label, s_m, e_m))
+                        
+                        # Update tracking
+                        minutes_by_emp[ft_eid] = minutes_by_emp.get(ft_eid, 0) + (e_m - s_m)
+                        assigned_shifts_by_emp[ft_eid].append(AssignedShift(shift_date, s_m, e_m, label))
+                        shifts_by_date_by_emp[ft_eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
+                        
+                        assigned_shifts_map[key] = assigned_shifts_map.get(key, 0) + 1
+                        unassigned -= 1
+                        
+                        # Update ft_under_target list (remove if now at target)
+                        ft_current_weekly_after = (ft_current_total + shift_hours) / weeks_in_month
+                        if ft_current_weekly_after >= FT_MIN_HOURS_PER_WEEK:
+                            ft_under_target = [(e, h) for e, h in ft_under_target if e != ft_eid]
+    
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints
     improved_swaps = 0

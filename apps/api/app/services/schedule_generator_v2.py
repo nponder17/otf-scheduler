@@ -675,6 +675,11 @@ def generate_month_schedule(
             assigned_shifts_by_emp[eid].append(assigned_shift)
             shifts_by_date_by_emp[eid].setdefault(shift_date, []).append(assigned_shift)
             minutes_by_emp[eid] = minutes_by_emp.get(eid, 0) + (e_m - s_m)
+            
+            # Update weekend tracking per pay week
+            if _is_weekend(dow):
+                wk = _payweek_id(shift_date, PAYWEEK_ANCHOR)
+                weekend_day_by_emp_week[eid][wk] = dow
         
         # Audit
         eligible_count = len(candidates)

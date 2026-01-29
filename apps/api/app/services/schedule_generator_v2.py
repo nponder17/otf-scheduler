@@ -723,26 +723,34 @@ def generate_month_schedule(
                     
                     # Only swap if PT would still be reasonable (not too far under ideal)
                     if pt_profile and pt_profile.ideal_hours_weekly:
-                        if pt_new_weekly >= pt_profile.ideal_hours_weekly * 0.8:  # At least 80% of ideal
-                            # Swap the shift
-                            scheduled_shifts[i] = (ft_eid, shift_date, dow, label, s_m, e_m)
+                        # More lenient: allow swap if PT would be at least 70% of ideal (was 80%)
+                        if pt_new_weekly >= pt_profile.ideal_hours_weekly * 0.7:
+                            # Also check: would this help FT get closer to target?
+                            ft_current_total = _minutes_to_hours(minutes_by_emp.get(ft_eid, 0))
+                            ft_current_weekly = ft_current_total / weeks_in_month
+                            ft_after_weekly = (ft_current_total + shift_hours) / weeks_in_month
                             
-                            # Update tracking
-                            minutes_by_emp[ft_eid] = minutes_by_emp.get(ft_eid, 0) + (e_m - s_m)
-                            minutes_by_emp[pt_eid] = minutes_by_emp.get(pt_eid, 0) - (e_m - s_m)
-                            
-                            # Update assigned shifts tracking
-                            assigned_shifts_by_emp[ft_eid].append(AssignedShift(shift_date, s_m, e_m, label))
-                            assigned_shifts_by_emp[pt_eid] = [s for s in assigned_shifts_by_emp[pt_eid] 
-                                                              if not (s.shift_date == shift_date and s.start_m == s_m and s.end_m == e_m)]
-                            
-                            shifts_by_date_by_emp[ft_eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
-                            if shift_date in shifts_by_date_by_emp[pt_eid]:
-                                shifts_by_date_by_emp[pt_eid][shift_date] = [s for s in shifts_by_date_by_emp[pt_eid][shift_date]
-                                                                              if not (s.start_m == s_m and s.end_m == e_m)]
-                            
-                            swap_count += 1
-                            break
+                            # Only swap if it helps FT get closer to target (and doesn't go way over)
+                            if ft_after_weekly > ft_current_weekly and ft_after_weekly <= FT_MIN_HOURS_PER_WEEK + 10:
+                                # Swap the shift
+                                scheduled_shifts[i] = (ft_eid, shift_date, dow, label, s_m, e_m)
+                                
+                                # Update tracking
+                                minutes_by_emp[ft_eid] = minutes_by_emp.get(ft_eid, 0) + (e_m - s_m)
+                                minutes_by_emp[pt_eid] = minutes_by_emp.get(pt_eid, 0) - (e_m - s_m)
+                                
+                                # Update assigned shifts tracking
+                                assigned_shifts_by_emp[ft_eid].append(AssignedShift(shift_date, s_m, e_m, label))
+                                assigned_shifts_by_emp[pt_eid] = [s for s in assigned_shifts_by_emp[pt_eid] 
+                                                                  if not (s.shift_date == shift_date and s.start_m == s_m and s.end_m == e_m)]
+                                
+                                shifts_by_date_by_emp[ft_eid].setdefault(shift_date, []).append(AssignedShift(shift_date, s_m, e_m, label))
+                                if shift_date in shifts_by_date_by_emp[pt_eid]:
+                                    shifts_by_date_by_emp[pt_eid][shift_date] = [s for s in shifts_by_date_by_emp[pt_eid][shift_date]
+                                                                                  if not (s.start_m == s_m and s.end_m == e_m)]
+                                
+                                swap_count += 1
+                                break
     
     # ========== PHASE B: Optimization Pass (Swaps) ==========
     # Random swap attempts to improve soft constraints

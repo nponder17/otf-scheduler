@@ -445,6 +445,16 @@ def generate_month_schedule(
             if consecutive_count > MAX_CONSECUTIVE_DAYS:
                 reasons.append(f"too_many_consecutive_days_{consecutive_count}")
         
+        # Weekend constraint: Each employee must work exactly ONE weekend day (Saturday OR Sunday, not both)
+        if _is_weekend(dow):
+            # Check if employee already has a weekend shift on the opposite day
+            for existing_shift in assigned_shifts_by_emp.get(eid, []):
+                existing_dow = existing_shift.shift_date.weekday()
+                if _is_weekend(existing_dow) and existing_dow != dow:
+                    # Employee already has a weekend shift on the other day
+                    reasons.append("already_has_weekend_shift")
+                    break
+        
         return (len(reasons) == 0, reasons)
     
     # ========== PHASE A: Scoring Function ==========
@@ -481,6 +491,8 @@ def generate_month_schedule(
                 score += WEIGHT_WEEKEND_PREF_MATCH
                 reasons.append("weekend_pref_match_sun")
             elif pref == "either":
+                # "Either" should get weekend shifts, but with lower priority than specific preferences
+                # Give a small positive score to encourage weekend shifts for "either" employees
                 score += WEIGHT_WEEKEND_PREF_EITHER
                 reasons.append("weekend_pref_either")
             elif pref == "saturday" and _is_sunday(dow):

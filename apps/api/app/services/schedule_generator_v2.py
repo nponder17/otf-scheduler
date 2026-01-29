@@ -633,7 +633,9 @@ def generate_month_schedule(
     for shift_date, day_of_week, label, start_time, end_time, required_count in demand_sorted:
         s_m = _to_minutes(start_time)
         e_m = _to_minutes(end_time)
-        dow = int(day_of_week)
+        # Calculate dow from shift_date to ensure consistency (database convention: 0=Sun, 6=Sat)
+        # Don't trust day_of_week from ShiftInstance - calculate from actual date
+        dow = _date_to_dow(shift_date)
         
         # Find eligible candidates
         candidates: List[Tuple[UUID, float, List[str]]] = []  # (eid, score, reasons)
@@ -1184,13 +1186,16 @@ def generate_month_schedule(
         start_time_obj = datetime(2000, 1, 1, s_m // 60, s_m % 60).time()
         end_time_obj = datetime(2000, 1, 1, e_m // 60, e_m % 60).time()
         
+        # Calculate day_of_week from shift_date to ensure consistency (database convention: 0=Sun, 6=Sat)
+        db_dow = _date_to_dow(shift_date)
+        
         db.add(
             ScheduledShift(
                 schedule_run_id=run.schedule_run_id,
                 employee_id=eid,
                 studio_id=studio_id,
                 shift_date=shift_date,
-                day_of_week=dow,
+                day_of_week=db_dow,  # Use calculated value from date, not from ShiftInstance
                 label=label,
                 start_time=start_time_obj,
                 end_time=end_time_obj,

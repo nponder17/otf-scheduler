@@ -377,6 +377,10 @@ def generate_month_schedule(
     minutes_by_emp: Dict[UUID, int] = {eid: 0 for eid in emp_ids}
     shifts_by_date_by_emp: Dict[UUID, Dict[date, List[AssignedShift]]] = {eid: {} for eid in emp_ids}
     
+    # Track weekend assignments per employee per pay week (Saturday-start weeks)
+    PAYWEEK_ANCHOR = _payweek_start(month_start)
+    weekend_day_by_emp_week: Dict[UUID, Dict[int, int]] = defaultdict(dict)  # {eid: {week_id: dow}}
+    
     # ========== PHASE A: Hard Constraints Eligibility ==========
     def check_hard_constraints(
         eid: UUID,

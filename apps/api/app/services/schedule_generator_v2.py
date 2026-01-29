@@ -902,7 +902,7 @@ def generate_month_schedule(
     # Example: Charity prefers Sunday but got Saturday - swap with someone who prefers Saturday but got Sunday
     weeks_in_month = max(4.0, ((month_end - month_start).days + 1) / 7.0)
     weekend_swap_count = 0
-    max_weekend_swaps = 50
+    max_weekend_swaps = 200  # Increased to ensure we find all swaps
     
     for attempt in range(max_weekend_swaps):
         if weekend_swap_count >= max_weekend_swaps:
@@ -980,9 +980,11 @@ def generate_month_schedule(
                         profile2_ft = profile2.is_full_time()
                         
                         ok_to_swap = True
-                        if profile1_ft and e1_after_weekly < FT_MIN_HOURS_PER_WEEK:
+                        # Allow swap if FT employees would still be close to target (within 5 hours)
+                        # Weekend preferences are important, so be more lenient
+                        if profile1_ft and e1_after_weekly < FT_MIN_HOURS_PER_WEEK - 5:
                             ok_to_swap = False
-                        if profile2_ft and e2_after_weekly < FT_MIN_HOURS_PER_WEEK:
+                        if profile2_ft and e2_after_weekly < FT_MIN_HOURS_PER_WEEK - 5:
                             ok_to_swap = False
                         
                         if ok_to_swap:

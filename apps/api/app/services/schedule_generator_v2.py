@@ -309,6 +309,7 @@ def generate_month_schedule(
                 for template in SHIFT_TEMPLATES:
                     if db_dow in template["days"]:
                         # Check if shift instance already exists
+                        # Check by (company_id, studio_id, shift_date, label) to avoid duplicates
                         existing = db.execute(
                             select(ShiftInstance.shift_instance_id).where(
                                 and_(
@@ -316,6 +317,8 @@ def generate_month_schedule(
                                     ShiftInstance.studio_id == studio_id,
                                     ShiftInstance.shift_date == current_date,
                                     ShiftInstance.label == template["label"],
+                                    ShiftInstance.start_time == time(int(template["start_hhmm"].split(":")[0]), int(template["start_hhmm"].split(":")[1])),
+                                    ShiftInstance.end_time == time(int(template["end_hhmm"].split(":")[0]), int(template["end_hhmm"].split(":")[1])),
                                 )
                             )
                         ).first()

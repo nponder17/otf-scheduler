@@ -10,12 +10,12 @@ from __future__ import annotations
 import json
 import random
 from collections import Counter, defaultdict
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, time
 from typing import Dict, List, Tuple, Optional, Set
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import and_, delete, select, text, func
+from sqlalchemy import and_, delete, select, text, func, func
 from sqlalchemy.orm import Session
 
 from app.models.availability import EmployeeAvailability

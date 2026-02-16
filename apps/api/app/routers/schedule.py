@@ -251,7 +251,7 @@ def get_schedule_coverage(run_id: UUID, db: Session = Depends(get_db)):
     rows = db.execute(
         text(
             """
-            WITH base AS (
+            WITH shift_instances_with_scheduled AS (
               SELECT
                 si.shift_date,
                 si.label,
@@ -283,19 +283,58 @@ def get_schedule_coverage(run_id: UUID, db: Session = Depends(get_db)):
                 AND si.studio_id  = :studio_id
                 AND si.shift_date BETWEEN :month_start AND :month_end
               GROUP BY si.shift_date, si.label, si.start_time, si.end_time, si.required_count
+            ),
+            orphaned_scheduled_shifts AS (
+              SELECT
+                ss.shift_date,
+                ss.label,
+                ss.start_time,
+                ss.end_time,
+                0 AS required_count,
+                COUNT(ss.scheduled_shift_id) AS scheduled_count,
+                0 AS missing_count,
+                COALESCE(
+                  JSON_AGG(
+                    JSON_BUILD_OBJECT(
+                      'employee_id', ss.employee_id,
+                      'name', e.name
+                    )
+                    ORDER BY e.name
+                  ),
+                  '[]'::json
+                ) AS assigned
+              FROM scheduled_shifts ss
+              JOIN employees e ON e.employee_id = ss.employee_id
+              WHERE ss.schedule_run_id = :run_id
+                AND ss.shift_date BETWEEN :month_start AND :month_end
+                AND NOT EXISTS (
+                  SELECT 1 FROM shift_instances si
+                  WHERE si.company_id = :company_id
+                    AND si.studio_id = :studio_id
+                    AND si.shift_date = ss.shift_date
+                    AND si.label = ss.label
+                    AND si.start_time = ss.start_time
+                    AND si.end_time = ss.end_time
+                )
+              GROUP BY ss.shift_date, ss.label, ss.start_time, ss.end_time
+            ),
+            combined AS (
+              SELECT * FROM shift_instances_with_scheduled
+              UNION ALL
+              SELECT * FROM orphaned_scheduled_shifts
             )
             SELECT
-              b.*,
+              c.*,
               COALESCE(a.candidate_count, 0) AS candidate_count,
               COALESCE(a.rejection_summary, '{}'::jsonb) AS rejection_summary
-            FROM base b
+            FROM combined c
             LEFT JOIN schedule_audit_shift a
               ON a.schedule_run_id = :run_id
-             AND a.shift_date = b.shift_date
-             AND a.label = b.label
-             AND a.start_time = b.start_time
-             AND a.end_time = b.end_time
-            ORDER BY b.shift_date, b.start_time
+             AND a.shift_date = c.shift_date
+             AND a.label = c.label
+             AND a.start_time = c.start_time
+             AND a.end_time = c.end_time
+            ORDER BY c.shift_date, c.start_time
             """
         ),
         {

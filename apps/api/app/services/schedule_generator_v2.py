@@ -309,7 +309,12 @@ def generate_month_schedule(
                 for template in SHIFT_TEMPLATES:
                     if db_dow in template["days"]:
                         # Check if shift instance already exists
-                        # Check by (company_id, studio_id, shift_date, label) to avoid duplicates
+                        # Check by (company_id, studio_id, shift_date, label, start_time, end_time) to avoid duplicates
+                        start_parts = template["start_hhmm"].split(":")
+                        end_parts = template["end_hhmm"].split(":")
+                        start_time_obj = time(int(start_parts[0]), int(start_parts[1]))
+                        end_time_obj = time(int(end_parts[0]), int(end_parts[1]))
+                        
                         existing = db.execute(
                             select(ShiftInstance.shift_instance_id).where(
                                 and_(
@@ -317,42 +322,55 @@ def generate_month_schedule(
                                     ShiftInstance.studio_id == studio_id,
                                     ShiftInstance.shift_date == current_date,
                                     ShiftInstance.label == template["label"],
-                                    ShiftInstance.start_time == time(int(template["start_hhmm"].split(":")[0]), int(template["start_hhmm"].split(":")[1])),
-                                    ShiftInstance.end_time == time(int(template["end_hhmm"].split(":")[0]), int(template["end_hhmm"].split(":")[1])),
+                                    ShiftInstance.start_time == start_time_obj,
+                                    ShiftInstance.end_time == end_time_obj,
                                 )
                             )
                         ).first()
                         
                         if not existing:
-                            # Parse times
-                            start_parts = template["start_hhmm"].split(":")
-                            end_parts = template["end_hhmm"].split(":")
-                            start_time_str = f"{int(start_parts[0]):02d}:{int(start_parts[1]):02d}:00"
-                            end_time_str = f"{int(end_parts[0]):02d}:{int(end_parts[1]):02d}:00"
+                            # Also check by unique constraint (company_id, studio_id, shift_date, shift_template_id)
+                            # to avoid violating the unique constraint
+                            existing_by_template = db.execute(
+                                select(ShiftInstance.shift_instance_id).where(
+                                    and_(
+                                        ShiftInstance.company_id == company_id,
+                                        ShiftInstance.studio_id == studio_id,
+                                        ShiftInstance.shift_date == current_date,
+                                        ShiftInstance.shift_template_id == template_id,
+                                    )
+                                )
+                            ).first()
                             
-                            # Use raw SQL to insert shift instance with valid template_id
-                            db.execute(
-                                text("""
-                                    INSERT INTO shift_instances 
-                                    (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
-                                     label, start_time, end_time, required_count, status)
-                                    VALUES 
-                                    (:company_id, :studio_id, :template_id, :shift_date, :day_of_week,
-                                     :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
-                                """),
-                                {
-                                    "company_id": str(company_id),
-                                    "studio_id": str(studio_id),
-                                    "template_id": str(template_id),
-                                    "shift_date": current_date,
-                                    "day_of_week": db_dow,
-                                    "label": template["label"],
-                                    "start_time": start_time_str,
-                                    "end_time": end_time_str,
-                                    "required_count": template["required"],
-                                },
-                            )
-                            created_count += 1
+                            if not existing_by_template:
+                                start_time_str = f"{int(start_parts[0]):02d}:{int(start_parts[1]):02d}:00"
+                                end_time_str = f"{int(end_parts[0]):02d}:{int(end_parts[1]):02d}:00"
+                                
+                                # Use raw SQL to insert shift instance with valid template_id
+                                # Use ON CONFLICT to handle race conditions
+                                db.execute(
+                                    text("""
+                                        INSERT INTO shift_instances 
+                                        (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
+                                         label, start_time, end_time, required_count, status)
+                                        VALUES 
+                                        (:company_id, :studio_id, :template_id, :shift_date, :day_of_week,
+                                         :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
+                                        ON CONFLICT (company_id, studio_id, shift_date, shift_template_id) DO NOTHING
+                                    """),
+                                    {
+                                        "company_id": str(company_id),
+                                        "studio_id": str(studio_id),
+                                        "template_id": str(template_id),
+                                        "shift_date": current_date,
+                                        "day_of_week": db_dow,
+                                        "label": template["label"],
+                                        "start_time": start_time_str,
+                                        "end_time": end_time_str,
+                                        "required_count": template["required"],
+                                    },
+                                )
+                                created_count += 1
                 
                 current_date += timedelta(days=1)
             

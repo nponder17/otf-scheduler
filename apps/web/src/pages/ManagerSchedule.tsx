@@ -596,6 +596,70 @@ export default function ManagerSchedule() {
     setEditModalOpen(true);
   }
 
+  const handleExportToExcel = async () => {
+    if (!runId) {
+      setMsg("No schedule to export");
+      return;
+    }
+
+    try {
+      // Fetch schedule data
+      const res = await fetch(`${API_BASE}/schedules/${runId}`);
+      if (!res.ok) {
+        setMsg("Failed to fetch schedule data");
+        return;
+      }
+
+      const data = await res.json();
+      const shifts = data.shifts || [];
+
+      // Create Excel workbook using a simple approach
+      // We'll create a CSV-like structure that Excel can open
+      const headers = ["Date", "Day", "Employee", "Label", "Start Time", "End Time", "Hours"];
+      const rows = shifts.map((shift: any) => {
+        const start = new Date(`2000-01-01T${shift.start_time}`);
+        const end = new Date(`2000-01-01T${shift.end_time}`);
+        const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+        
+        const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const date = new Date(shift.shift_date);
+        const dayName = dayNames[date.getDay()];
+
+        return [
+          shift.shift_date,
+          dayName,
+          shift.employee_name || "Unknown",
+          shift.label || "",
+          shift.start_time,
+          shift.end_time,
+          hours.toFixed(2),
+        ];
+      });
+
+      // Create CSV content
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row: any[]) => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
+      ].join("\n");
+
+      // Add BOM for Excel UTF-8 support
+      const BOM = "\uFEFF";
+      const blob = new Blob([BOM + csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `schedule_${runId.slice(0, 8)}_${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      setMsg("Schedule exported successfully!");
+    } catch (e) {
+      setMsg(`Export error: ${e}`);
+    }
+  };
+
   const styles: Record<string, React.CSSProperties> = {
     page: {
       minHeight: "100vh",

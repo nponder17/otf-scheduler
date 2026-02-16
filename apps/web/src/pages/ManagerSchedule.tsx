@@ -219,7 +219,12 @@ export default function ManagerSchedule() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/companies`);
+        const token = localStorage.getItem("auth_token");
+        const res = await fetch(`${API_BASE}/companies`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
         const data = await res.json();
         setCompanies(Array.isArray(data) ? data : []);
       } catch {
@@ -238,7 +243,12 @@ export default function ManagerSchedule() {
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/companies/${companyId}/studios`);
+        const token = localStorage.getItem("auth_token");
+        const res = await fetch(`${API_BASE}/companies/${companyId}/studios`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
         const data = await res.json();
         const arr = Array.isArray(data) ? data : [];
         setStudios(arr);
@@ -259,7 +269,20 @@ export default function ManagerSchedule() {
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/admin/companies/${companyId}/employees`);
+        const token = localStorage.getItem("auth_token");
+        if (!token) {
+          setEmployees([]);
+          return;
+        }
+        const res = await fetch(`${API_BASE}/admin/companies/${companyId}/employees`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!res.ok) {
+          setEmployees([]);
+          return;
+        }
         const data = await res.json();
         setEmployees(Array.isArray(data) ? data.filter((e: Employee) => e.employee_id) : []);
       } catch {
@@ -269,9 +292,13 @@ export default function ManagerSchedule() {
   }, [companyId]);
 
   async function loadCoverageForRun(run: string) {
+    const token = localStorage.getItem("auth_token");
+    const headers = {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
     const [covRes, shiftsRes] = await Promise.all([
-      fetch(`${API_BASE}/schedules/${run}/coverage`),
-      fetch(`${API_BASE}/schedules/${run}`),
+      fetch(`${API_BASE}/schedules/${run}/coverage`, { headers }),
+      fetch(`${API_BASE}/schedules/${run}`, { headers }),
     ]);
 
     const covJson = (await covRes.json()) as CoverageResponse | CoverageRow[];
@@ -299,9 +326,13 @@ export default function ManagerSchedule() {
 
     setLoading(true);
     try {
+      const token = localStorage.getItem("auth_token");
       const res = await fetch(`${API_BASE}/schedules/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           company_id: companyId,
           studio_id: studioId,
@@ -469,6 +500,7 @@ export default function ManagerSchedule() {
     });
 
     try {
+      const token = localStorage.getItem("auth_token");
       const url =
         `${API_BASE}/schedules/${runId}/audit/shift` +
         `?shift_date=${encodeURIComponent(shift_date)}` +
@@ -476,7 +508,11 @@ export default function ManagerSchedule() {
         `&start_time=${encodeURIComponent(start_time)}` +
         `&end_time=${encodeURIComponent(end_time)}`;
 
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
       const json = (await res.json()) as any;
 
       if (!res.ok) {
@@ -510,9 +546,13 @@ export default function ManagerSchedule() {
     setEditLoading(true);
     setMsg("");
     try {
+      const token = localStorage.getItem("auth_token");
       const res = await fetch(`${API_BASE}/schedules/shifts/${editingShift.scheduled_shift_id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ employee_id: selectedEmployeeId }),
       });
 
@@ -540,8 +580,12 @@ export default function ManagerSchedule() {
 
     setMsg("");
     try {
+      const token = localStorage.getItem("auth_token");
       const res = await fetch(`${API_BASE}/schedules/shifts/${shiftId}`, {
         method: "DELETE",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
 
       if (!res.ok) {
@@ -566,9 +610,13 @@ export default function ManagerSchedule() {
     setAddLoading(true);
     setMsg("");
     try {
+      const token = localStorage.getItem("auth_token");
       const res = await fetch(`${API_BASE}/schedules/shifts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           schedule_run_id: runId,
           employee_id: newShift.employee_id,
@@ -616,7 +664,12 @@ export default function ManagerSchedule() {
 
     try {
       // Fetch schedule data
-      const res = await fetch(`${API_BASE}/schedules/${runId}`);
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`${API_BASE}/schedules/${runId}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
       if (!res.ok) {
         setMsg("Failed to fetch schedule data");
         return;

@@ -312,13 +312,19 @@ export default function ManagerSchedule() {
         }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setMsg(data?.detail ? JSON.stringify(data.detail) : JSON.stringify(data));
+        let errorDetail = "";
+        try {
+          const data = await res.json();
+          errorDetail = data?.detail || JSON.stringify(data);
+        } catch {
+          errorDetail = await res.text().catch(() => res.statusText);
+        }
+        setMsg(`Generate failed (${res.status}): ${errorDetail}`);
         return;
       }
 
+      const data = await res.json();
       const newRunId = data?.schedule_run_id as string | undefined;
       if (!newRunId) {
         setMsg("Generate succeeded but no schedule_run_id returned.");
@@ -330,7 +336,13 @@ export default function ManagerSchedule() {
 
       setMsg("Generated ✅");
     } catch (e: any) {
-      setMsg(e?.message ?? "Generation failed");
+      // More detailed error message
+      const errorMsg = e?.message || String(e);
+      if (errorMsg.includes("Failed to fetch") || errorMsg.includes("NetworkError") || errorMsg.includes("fetch")) {
+        setMsg(`Network error: Could not connect to API at ${API_BASE}. Check if the server is running and CORS is configured.`);
+      } else {
+        setMsg(`Generate error: ${errorMsg}`);
+      }
     } finally {
       setLoading(false);
     }

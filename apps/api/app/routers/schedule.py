@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, time, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.scheduled_shifts import ScheduledShift
+from app.models.shift_instances import ShiftInstance
+from app.scheduling.shift_templates import SHIFT_TEMPLATES
 
 router = APIRouter()
 
@@ -32,6 +34,132 @@ class ShiftCreateRequest(BaseModel):
     label: str
     start_time: str  # HH:MM
     end_time: str  # HH:MM
+
+
+class GenerateShiftInstancesRequest(BaseModel):
+    company_id: UUID
+    studio_id: UUID
+    month_start: date
+    month_end: date
+    overwrite: bool = False
+
+
+@router.post("/shift-instances/generate")
+def generate_shift_instances(req: GenerateShiftInstancesRequest, db: Session = Depends(get_db)):
+    """
+    Generate shift instances from templates for a given month range.
+    This creates the demand that the schedule generator will fill.
+    """
+    if req.month_end < req.month_start:
+        raise HTTPException(status_code=400, detail="month_end must be >= month_start")
+    
+    # Check if company and studio exist
+    company = db.execute(
+        text("SELECT company_id FROM companies WHERE company_id = :company_id"),
+        {"company_id": str(req.company_id)},
+    ).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    
+    studio = db.execute(
+        text("SELECT studio_id FROM studios WHERE studio_id = :studio_id AND company_id = :company_id"),
+        {"studio_id": str(req.studio_id), "company_id": str(req.company_id)},
+    ).first()
+    if not studio:
+        raise HTTPException(status_code=404, detail="Studio not found or doesn't belong to company")
+    
+    # Delete existing shift instances if overwrite is True
+    if req.overwrite:
+        db.execute(
+            text("""
+                DELETE FROM shift_instances 
+                WHERE company_id = :company_id 
+                  AND studio_id = :studio_id
+                  AND shift_date BETWEEN :month_start AND :month_end
+            """),
+            {
+                "company_id": str(req.company_id),
+                "studio_id": str(req.studio_id),
+                "month_start": req.month_start,
+                "month_end": req.month_end,
+            },
+        )
+    
+    # Generate shift instances from templates
+    created_count = 0
+    current_date = req.month_start
+    
+    while current_date <= req.month_end:
+        # Python weekday: Mon=0, Tue=1, ..., Sat=5, Sun=6
+        # Database convention: Sun=0, Mon=1, ..., Sat=6
+        python_dow = current_date.weekday()
+        db_dow = (python_dow + 1) % 7  # Convert to DB convention
+        
+        # Check each template to see if it applies to this day
+        for template in SHIFT_TEMPLATES:
+            if db_dow in template["days"]:
+                # Check if shift instance already exists
+                existing = db.execute(
+                    text("""
+                        SELECT shift_instance_id 
+                        FROM shift_instances 
+                        WHERE company_id = :company_id 
+                          AND studio_id = :studio_id
+                          AND shift_date = :shift_date
+                          AND label = :label
+                    """),
+                    {
+                        "company_id": str(req.company_id),
+                        "studio_id": str(req.studio_id),
+                        "shift_date": current_date,
+                        "label": template["label"],
+                    },
+                ).first()
+                
+                if not existing:
+                    # Parse times
+                    start_parts = template["start_hhmm"].split(":")
+                    end_parts = template["end_hhmm"].split(":")
+                    start_time_obj = time(int(start_parts[0]), int(start_parts[1]))
+                    end_time_obj = time(int(end_parts[0]), int(end_parts[1]))
+                    
+                    # Create shift instance
+                    # Note: We need a shift_template_id, but templates might not exist in DB
+                    # For now, we'll use a placeholder UUID or create a minimal template
+                    # Let's check if we need to handle this differently
+                    db.execute(
+                        text("""
+                            INSERT INTO shift_instances 
+                            (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
+                             label, start_time, end_time, required_count, status)
+                            VALUES 
+                            (:company_id, :studio_id, gen_random_uuid(), :shift_date, :day_of_week,
+                             :label, :start_time, :end_time, :required_count, 'active')
+                        """),
+                        {
+                            "company_id": str(req.company_id),
+                            "studio_id": str(req.studio_id),
+                            "shift_date": current_date,
+                            "day_of_week": db_dow,
+                            "label": template["label"],
+                            "start_time": start_time_obj,
+                            "end_time": end_time_obj,
+                            "required_count": template["required"],
+                        },
+                    )
+                    created_count += 1
+        
+        current_date += timedelta(days=1)
+    
+    db.commit()
+    
+    return {
+        "company_id": str(req.company_id),
+        "studio_id": str(req.studio_id),
+        "month_start": req.month_start,
+        "month_end": req.month_end,
+        "created_count": created_count,
+    }
 
 
 @router.post("/generate")

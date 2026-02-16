@@ -265,35 +265,51 @@ def generate_month_schedule(
         from app.models.shift_template import ShiftTemplate
         
         try:
-            # First, ensure we have a shift template to reference (for foreign key constraint)
-            # Get or create a dummy template for this company/studio
-            existing_template = db.execute(
-                select(ShiftTemplate.shift_template_id).where(
-                    and_(
-                        ShiftTemplate.company_id == company_id,
-                        ShiftTemplate.studio_id == studio_id,
-                    )
-                ).limit(1)
-            ).first()
+            # Create/get templates for each unique shift type (label + time combination)
+            # This avoids unique constraint violations since each shift type gets its own template_id
+            template_cache: Dict[str, UUID] = {}  # {label_start_end: template_id}
             
-            if existing_template:
-                template_id = existing_template[0]
-            else:
-                # Create a dummy template if none exists
-                dummy_template = ShiftTemplate(
-                    shift_template_id=func.gen_random_uuid(),
-                    company_id=company_id,
-                    studio_id=studio_id,
-                    label="AUTO_GENERATED",
-                    day_of_week=1,  # Monday
-                    start_time=time(9, 0),
-                    end_time=time(17, 0),
-                    required_count=1,
-                    active=True,
-                )
-                db.add(dummy_template)
-                db.flush()  # Flush to get the ID
-                template_id = dummy_template.shift_template_id
+            def get_or_create_template(label: str, start_time_obj: time, end_time_obj: time, day_of_week: int) -> UUID:
+                """Get or create a template for a specific shift type."""
+                cache_key = f"{label}_{start_time_obj}_{end_time_obj}_{day_of_week}"
+                if cache_key in template_cache:
+                    return template_cache[cache_key]
+                
+                # Check if template already exists
+                existing_template = db.execute(
+                    select(ShiftTemplate.shift_template_id).where(
+                        and_(
+                            ShiftTemplate.company_id == company_id,
+                            ShiftTemplate.studio_id == studio_id,
+                            ShiftTemplate.label == label,
+                            ShiftTemplate.start_time == start_time_obj,
+                            ShiftTemplate.end_time == end_time_obj,
+                            ShiftTemplate.day_of_week == day_of_week,
+                        )
+                    ).limit(1)
+                ).first()
+                
+                if existing_template:
+                    template_id = existing_template[0]
+                else:
+                    # Create a new template for this shift type
+                    new_template = ShiftTemplate(
+                        shift_template_id=func.gen_random_uuid(),
+                        company_id=company_id,
+                        studio_id=studio_id,
+                        label=label,
+                        day_of_week=day_of_week,
+                        start_time=start_time_obj,
+                        end_time=end_time_obj,
+                        required_count=1,
+                        active=True,
+                    )
+                    db.add(new_template)
+                    db.flush()  # Flush to get the ID
+                    template_id = new_template.shift_template_id
+                
+                template_cache[cache_key] = template_id
+                return template_id
             
             # Generate shift instances from templates
             current_date = month_start
@@ -308,13 +324,17 @@ def generate_month_schedule(
                 # Check each template to see if it applies to this day
                 for template in SHIFT_TEMPLATES:
                     if db_dow in template["days"]:
-                        # Check if shift instance already exists
-                        # Check by (company_id, studio_id, shift_date, label, start_time, end_time) to avoid duplicates
+                        # Parse times
                         start_parts = template["start_hhmm"].split(":")
                         end_parts = template["end_hhmm"].split(":")
                         start_time_obj = time(int(start_parts[0]), int(start_parts[1]))
                         end_time_obj = time(int(end_parts[0]), int(end_parts[1]))
                         
+                        # Get or create template for this shift type
+                        template_id = get_or_create_template(template["label"], start_time_obj, end_time_obj, db_dow)
+                        
+                        # Check if shift instance already exists
+                        # Check by (company_id, studio_id, shift_date, label, start_time, end_time) to avoid duplicates
                         existing = db.execute(
                             select(ShiftInstance.shift_instance_id).where(
                                 and_(
@@ -329,58 +349,44 @@ def generate_month_schedule(
                         ).first()
                         
                         if not existing:
-                            # Also check by unique constraint (company_id, studio_id, shift_date, shift_template_id)
-                            # to avoid violating the unique constraint
-                            existing_by_template = db.execute(
-                                select(ShiftInstance.shift_instance_id).where(
-                                    and_(
-                                        ShiftInstance.company_id == company_id,
-                                        ShiftInstance.studio_id == studio_id,
-                                        ShiftInstance.shift_date == current_date,
-                                        ShiftInstance.shift_template_id == template_id,
-                                    )
-                                )
-                            ).first()
+                            start_time_str = f"{int(start_parts[0]):02d}:{int(start_parts[1]):02d}:00"
+                            end_time_str = f"{int(end_parts[0]):02d}:{int(end_parts[1]):02d}:00"
                             
-                            if not existing_by_template:
-                                start_time_str = f"{int(start_parts[0]):02d}:{int(start_parts[1]):02d}:00"
-                                end_time_str = f"{int(end_parts[0]):02d}:{int(end_parts[1]):02d}:00"
-                                
-                                # Use raw SQL to insert shift instance with valid template_id
-                                # Wrap in try-except to handle unique constraint violations gracefully
-                                try:
-                                    db.execute(
-                                        text("""
-                                            INSERT INTO shift_instances 
-                                            (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
-                                             label, start_time, end_time, required_count, status)
-                                            VALUES 
-                                            (:company_id, :studio_id, :template_id, :shift_date, :day_of_week,
-                                             :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
-                                        """),
-                                        {
-                                            "company_id": str(company_id),
-                                            "studio_id": str(studio_id),
-                                            "template_id": str(template_id),
-                                            "shift_date": current_date,
-                                            "day_of_week": db_dow,
-                                            "label": template["label"],
-                                            "start_time": start_time_str,
-                                            "end_time": end_time_str,
-                                            "required_count": template["required"],
-                                        },
-                                    )
-                                    created_count += 1
-                                except Exception as insert_err:
-                                    # If it's a unique constraint violation, that's okay - skip it
-                                    # Other errors should be raised
-                                    error_str = str(insert_err).lower()
-                                    if "unique" in error_str or "duplicate" in error_str or "constraint" in error_str:
-                                        # Duplicate - skip this one, it's already there
-                                        pass
-                                    else:
-                                        # Re-raise if it's a different error
-                                        raise
+                            # Use raw SQL to insert shift instance with valid template_id
+                            # Wrap in try-except to handle unique constraint violations gracefully
+                            try:
+                                db.execute(
+                                    text("""
+                                        INSERT INTO shift_instances 
+                                        (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
+                                         label, start_time, end_time, required_count, status)
+                                        VALUES 
+                                        (:company_id, :studio_id, :template_id, :shift_date, :day_of_week,
+                                         :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
+                                    """),
+                                    {
+                                        "company_id": str(company_id),
+                                        "studio_id": str(studio_id),
+                                        "template_id": str(template_id),
+                                        "shift_date": current_date,
+                                        "day_of_week": db_dow,
+                                        "label": template["label"],
+                                        "start_time": start_time_str,
+                                        "end_time": end_time_str,
+                                        "required_count": template["required"],
+                                    },
+                                )
+                                created_count += 1
+                            except Exception as insert_err:
+                                # If it's a unique constraint violation, that's okay - skip it
+                                # Other errors should be raised
+                                error_str = str(insert_err).lower()
+                                if "unique" in error_str or "duplicate" in error_str or "constraint" in error_str:
+                                    # Duplicate - skip this one, it's already there
+                                    pass
+                                else:
+                                    # Re-raise if it's a different error
+                                    raise
                 
                 current_date += timedelta(days=1)
             

@@ -347,30 +347,40 @@ def generate_month_schedule(
                                 end_time_str = f"{int(end_parts[0]):02d}:{int(end_parts[1]):02d}:00"
                                 
                                 # Use raw SQL to insert shift instance with valid template_id
-                                # Use ON CONFLICT to handle race conditions
-                                db.execute(
-                                    text("""
-                                        INSERT INTO shift_instances 
-                                        (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
-                                         label, start_time, end_time, required_count, status)
-                                        VALUES 
-                                        (:company_id, :studio_id, :template_id, :shift_date, :day_of_week,
-                                         :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
-                                        ON CONFLICT (company_id, studio_id, shift_date, shift_template_id) DO NOTHING
-                                    """),
-                                    {
-                                        "company_id": str(company_id),
-                                        "studio_id": str(studio_id),
-                                        "template_id": str(template_id),
-                                        "shift_date": current_date,
-                                        "day_of_week": db_dow,
-                                        "label": template["label"],
-                                        "start_time": start_time_str,
-                                        "end_time": end_time_str,
-                                        "required_count": template["required"],
-                                    },
-                                )
-                                created_count += 1
+                                # Wrap in try-except to handle unique constraint violations gracefully
+                                try:
+                                    db.execute(
+                                        text("""
+                                            INSERT INTO shift_instances 
+                                            (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
+                                             label, start_time, end_time, required_count, status)
+                                            VALUES 
+                                            (:company_id, :studio_id, :template_id, :shift_date, :day_of_week,
+                                             :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
+                                        """),
+                                        {
+                                            "company_id": str(company_id),
+                                            "studio_id": str(studio_id),
+                                            "template_id": str(template_id),
+                                            "shift_date": current_date,
+                                            "day_of_week": db_dow,
+                                            "label": template["label"],
+                                            "start_time": start_time_str,
+                                            "end_time": end_time_str,
+                                            "required_count": template["required"],
+                                        },
+                                    )
+                                    created_count += 1
+                                except Exception as insert_err:
+                                    # If it's a unique constraint violation, that's okay - skip it
+                                    # Other errors should be raised
+                                    error_str = str(insert_err).lower()
+                                    if "unique" in error_str or "duplicate" in error_str or "constraint" in error_str:
+                                        # Duplicate - skip this one, it's already there
+                                        pass
+                                    else:
+                                        # Re-raise if it's a different error
+                                        raise
                 
                 current_date += timedelta(days=1)
             

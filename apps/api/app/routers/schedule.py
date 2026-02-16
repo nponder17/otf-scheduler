@@ -496,12 +496,25 @@ def create_shift(req: ShiftCreateRequest, db: Session = Depends(get_db)):
     if str(employee["company_id"]) != str(run["company_id"]):
         raise HTTPException(status_code=400, detail="Employee does not belong to this company")
 
-    # Parse times
+    # Parse times - accept both HH:MM and HH:MM:SS formats
+    def parse_time(time_str: str) -> time:
+        """Parse time string, accepting both HH:MM and HH:MM:SS formats."""
+        time_str = time_str.strip()
+        if len(time_str) == 5 and ':' in time_str:
+            # HH:MM format, append :00
+            time_str = time_str + ':00'
+        try:
+            return time.fromisoformat(time_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid time format: {time_str}. Use HH:MM or HH:MM:SS")
+    
     try:
-        start_time_obj = time.fromisoformat(req.start_time)
-        end_time_obj = time.fromisoformat(req.end_time)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM")
+        start_time_obj = parse_time(req.start_time)
+        end_time_obj = parse_time(req.end_time)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid time format: {str(e)}")
 
     # Get day of week
     day_of_week = req.shift_date.weekday()

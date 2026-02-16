@@ -611,6 +611,21 @@ export default function ManagerSchedule() {
     setMsg("");
     try {
       const token = localStorage.getItem("auth_token");
+      
+      // Convert time from HH:MM to HH:MM:SS format for backend
+      const formatTimeForBackend = (timeStr: string) => {
+        if (!timeStr) return timeStr;
+        // If already in HH:MM:SS format, return as is
+        if (timeStr.length === 8 && timeStr.includes(':')) {
+          return timeStr;
+        }
+        // If in HH:MM format, append :00
+        if (timeStr.length === 5 && timeStr.includes(':')) {
+          return timeStr + ':00';
+        }
+        return timeStr;
+      };
+      
       const res = await fetch(`${API_BASE}/schedules/shifts`, {
         method: "POST",
         headers: {
@@ -622,14 +637,20 @@ export default function ManagerSchedule() {
           employee_id: newShift.employee_id,
           shift_date: newShift.shift_date,
           label: newShift.label,
-          start_time: newShift.start_time,
-          end_time: newShift.end_time,
+          start_time: formatTimeForBackend(newShift.start_time),
+          end_time: formatTimeForBackend(newShift.end_time),
         }),
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        setMsg(data?.detail ? JSON.stringify(data.detail) : "Failed to add shift");
+        let errorDetail = "";
+        try {
+          const data = await res.json();
+          errorDetail = data?.detail || JSON.stringify(data);
+        } catch {
+          errorDetail = await res.text().catch(() => res.statusText);
+        }
+        setMsg(`Failed to add shift: ${errorDetail}`);
         return;
       }
 

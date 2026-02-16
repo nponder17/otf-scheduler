@@ -262,8 +262,39 @@ def generate_month_schedule(
     if not demand:
         from app.scheduling.shift_templates import SHIFT_TEMPLATES
         from datetime import timedelta
+        from app.models.shift_template import ShiftTemplate
         
         try:
+            # First, ensure we have a shift template to reference (for foreign key constraint)
+            # Get or create a dummy template for this company/studio
+            existing_template = db.execute(
+                select(ShiftTemplate.shift_template_id).where(
+                    and_(
+                        ShiftTemplate.company_id == company_id,
+                        ShiftTemplate.studio_id == studio_id,
+                    )
+                ).limit(1)
+            ).first()
+            
+            if existing_template:
+                template_id = existing_template[0]
+            else:
+                # Create a dummy template if none exists
+                dummy_template = ShiftTemplate(
+                    shift_template_id=func.gen_random_uuid(),
+                    company_id=company_id,
+                    studio_id=studio_id,
+                    label="AUTO_GENERATED",
+                    day_of_week=1,  # Monday
+                    start_time=time(9, 0),
+                    end_time=time(17, 0),
+                    required_count=1,
+                    active=True,
+                )
+                db.add(dummy_template)
+                db.flush()  # Flush to get the ID
+                template_id = dummy_template.shift_template_id
+            
             # Generate shift instances from templates
             current_date = month_start
             created_count = 0
@@ -296,21 +327,20 @@ def generate_month_schedule(
                             start_time_str = f"{int(start_parts[0]):02d}:{int(start_parts[1]):02d}:00"
                             end_time_str = f"{int(end_parts[0]):02d}:{int(end_parts[1]):02d}:00"
                             
-                            # Use raw SQL to insert shift instance
-                            # Note: shift_template_id foreign key may need to exist, but we'll try with gen_random_uuid()
-                            # If this fails, we may need to create templates first
+                            # Use raw SQL to insert shift instance with valid template_id
                             db.execute(
                                 text("""
                                     INSERT INTO shift_instances 
                                     (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
                                      label, start_time, end_time, required_count, status)
                                     VALUES 
-                                    (:company_id, :studio_id, gen_random_uuid(), :shift_date, :day_of_week,
+                                    (:company_id, :studio_id, :template_id, :shift_date, :day_of_week,
                                      :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
                                 """),
                                 {
                                     "company_id": str(company_id),
                                     "studio_id": str(studio_id),
+                                    "template_id": str(template_id),
                                     "shift_date": current_date,
                                     "day_of_week": db_dow,
                                     "label": template["label"],

@@ -517,7 +517,10 @@ def create_shift(req: ShiftCreateRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=f"Invalid time format: {str(e)}")
 
     # Get day of week
-    day_of_week = req.shift_date.weekday()
+    # Python weekday: Mon=0, Tue=1, ..., Sat=5, Sun=6
+    # Database convention: Sun=0, Mon=1, ..., Sat=6
+    python_dow = req.shift_date.weekday()
+    day_of_week = (python_dow + 1) % 7  # Convert to DB convention
 
     # Create shift
     shift = ScheduledShift(

@@ -931,38 +931,52 @@ export default function ManagerSchedule() {
 
             <Text style={{ color: "#e9eaec", fontWeight: "700", marginBottom: 8 }}>Assign to:</Text>
             <ScrollView style={{ maxHeight: 400 }}>
-              {employees.map((emp) => (
-                <Pressable
-                  key={emp.employee_id}
-                  onPress={() => setSelectedEmployeeId(emp.employee_id)}
+              {employees.length === 0 ? (
+                <View
                   style={{
                     padding: 12,
                     borderRadius: 8,
-                    backgroundColor: selectedEmployeeId === emp.employee_id ? "rgba(37,99,235,0.2)" : "#2a2a2a",
+                    backgroundColor: "#2a2a2a",
                     marginBottom: 8,
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                    opacity: 0.7,
                   }}
                 >
-                  <View>
-                    <Text style={{ color: "#e9eaec", fontWeight: "700" }}>{emp.name}</Text>
-                    <Text style={{ color: "#9aa4b2", fontSize: 12 }}>{emp.email}</Text>
-                  </View>
-                  {selectedEmployeeId === emp.employee_id && (
-                    <View
-                      style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 4,
-                        backgroundColor: "rgba(34,197,94,0.2)",
-                      }}
-                    >
-                      <Text style={{ color: "#7ee787", fontSize: 12, fontWeight: "700" }}>SELECTED</Text>
+                  <Text style={{ color: "#e9eaec" }}>No employees found. Please add employees first.</Text>
+                </View>
+              ) : (
+                employees.map((emp) => (
+                  <Pressable
+                    key={emp.employee_id}
+                    onPress={() => setSelectedEmployeeId(emp.employee_id)}
+                    style={{
+                      padding: 12,
+                      borderRadius: 8,
+                      backgroundColor: selectedEmployeeId === emp.employee_id ? "rgba(37,99,235,0.2)" : "#2a2a2a",
+                      marginBottom: 8,
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <View>
+                      <Text style={{ color: "#e9eaec", fontWeight: "700" }}>{emp.name}</Text>
+                      <Text style={{ color: "#9aa4b2", fontSize: 12 }}>{emp.email}</Text>
                     </View>
-                  )}
-                </Pressable>
-              ))}
+                    {selectedEmployeeId === emp.employee_id && (
+                      <View
+                        style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 4,
+                          backgroundColor: "rgba(34,197,94,0.2)",
+                        }}
+                      >
+                        <Text style={{ color: "#7ee787", fontSize: 12, fontWeight: "700" }}>SELECTED</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                ))
+              )}
             </ScrollView>
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
@@ -1111,38 +1125,52 @@ export default function ManagerSchedule() {
 
             <Text style={{ color: "#e9eaec", fontWeight: "700", marginBottom: 8 }}>Assign to:</Text>
             <ScrollView style={{ maxHeight: 200, marginBottom: 16 }}>
-              {employees.map((emp) => (
-                <Pressable
-                  key={emp.employee_id}
-                  onPress={() => setNewShift({ ...newShift, employee_id: emp.employee_id })}
+              {employees.length === 0 ? (
+                <View
                   style={{
                     padding: 12,
                     borderRadius: 8,
-                    backgroundColor: newShift.employee_id === emp.employee_id ? "rgba(37,99,235,0.2)" : "#2a2a2a",
+                    backgroundColor: "#2a2a2a",
                     marginBottom: 8,
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                    opacity: 0.7,
                   }}
                 >
-                  <View>
-                    <Text style={{ color: "#e9eaec", fontWeight: "700" }}>{emp.name}</Text>
-                    <Text style={{ color: "#9aa4b2", fontSize: 12 }}>{emp.email}</Text>
-                  </View>
-                  {newShift.employee_id === emp.employee_id && (
-                    <View
-                      style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 4,
-                        backgroundColor: "rgba(34,197,94,0.2)",
-                      }}
-                    >
-                      <Text style={{ color: "#7ee787", fontSize: 12, fontWeight: "700" }}>SELECTED</Text>
+                  <Text style={{ color: "#e9eaec" }}>No employees found. Please add employees first.</Text>
+                </View>
+              ) : (
+                employees.map((emp) => (
+                  <Pressable
+                    key={emp.employee_id}
+                    onPress={() => setNewShift({ ...newShift, employee_id: emp.employee_id })}
+                    style={{
+                      padding: 12,
+                      borderRadius: 8,
+                      backgroundColor: newShift.employee_id === emp.employee_id ? "rgba(37,99,235,0.2)" : "#2a2a2a",
+                      marginBottom: 8,
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <View>
+                      <Text style={{ color: "#e9eaec", fontWeight: "700" }}>{emp.name}</Text>
+                      <Text style={{ color: "#9aa4b2", fontSize: 12 }}>{emp.email}</Text>
                     </View>
-                  )}
-                </Pressable>
-              ))}
+                    {newShift.employee_id === emp.employee_id && (
+                      <View
+                        style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 4,
+                          backgroundColor: "rgba(34,197,94,0.2)",
+                        }}
+                      >
+                        <Text style={{ color: "#7ee787", fontSize: 12, fontWeight: "700" }}>SELECTED</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                ))
+              )}
             </ScrollView>
 
             <View style={{ flexDirection: "row", gap: 10 }}>

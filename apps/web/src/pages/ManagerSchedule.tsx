@@ -1163,22 +1163,31 @@ export default function ManagerSchedule() {
         </button>
 
         {runId && (
-          <button
-            style={styles.btn}
-            onClick={() => {
-              setNewShift({
-                shift_date: "",
-                label: "",
-                start_time: "",
-                end_time: "",
-                employee_id: "",
-              });
-              setAddModalOpen(true);
-            }}
-            title="Manually add a shift assignment"
-          >
-            + Add Shift
-          </button>
+          <>
+            <button
+              style={styles.btn}
+              onClick={() => {
+                setNewShift({
+                  shift_date: "",
+                  label: "",
+                  start_time: "",
+                  end_time: "",
+                  employee_id: "",
+                });
+                setAddModalOpen(true);
+              }}
+              title="Manually add a shift assignment"
+            >
+              + Add Shift
+            </button>
+            <button
+              style={{ ...styles.btn, background: "rgba(34,197,94,0.15)", borderColor: "rgba(34,197,94,0.3)", color: "#7ee787" }}
+              onClick={handleExportToExcel}
+              title="Export schedule to Excel"
+            >
+              📥 Export to Excel
+            </button>
+          </>
         )}
       </div>
 
@@ -1504,24 +1513,41 @@ export default function ManagerSchedule() {
 
             <div style={styles.sectionTitle}>Assign to:</div>
             <div style={{ maxHeight: "400px", overflowY: "auto", marginTop: 8 }}>
-              {employees.map((emp) => (
-                <div
-                  key={emp.employee_id}
-                  style={{
-                    ...styles.row,
-                    cursor: "pointer",
-                    background: selectedEmployeeId === emp.employee_id ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.04)",
-                  }}
-                  onClick={() => setSelectedEmployeeId(emp.employee_id)}
-                >
-                  <div style={{ fontWeight: 900 }}>
-                    {emp.name} <span style={{ opacity: 0.7, fontSize: 12 }}>({emp.email})</span>
-                  </div>
-                  {selectedEmployeeId === emp.employee_id && (
-                    <div style={{ ...styles.badge, ...styles.badgeGreen }}>SELECTED</div>
-                  )}
+              {employees.length === 0 ? (
+                <div style={{ ...styles.row, opacity: 0.7, cursor: "not-allowed" }}>
+                  <div>No employees found. Please add employees first.</div>
                 </div>
-              ))}
+              ) : (
+                employees.map((emp) => (
+                  <div
+                    key={emp.employee_id}
+                    style={{
+                      ...styles.row,
+                      cursor: "pointer",
+                      background: selectedEmployeeId === emp.employee_id ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.04)",
+                      transition: "background 0.2s",
+                    }}
+                    onClick={() => setSelectedEmployeeId(emp.employee_id)}
+                    onMouseEnter={(e) => {
+                      if (selectedEmployeeId !== emp.employee_id) {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (selectedEmployeeId !== emp.employee_id) {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                      }
+                    }}
+                  >
+                    <div style={{ fontWeight: 900 }}>
+                      {emp.name} <span style={{ opacity: 0.7, fontSize: 12 }}>({emp.email})</span>
+                    </div>
+                    {selectedEmployeeId === emp.employee_id && (
+                      <div style={{ ...styles.badge, ...styles.badgeGreen }}>SELECTED</div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
@@ -1637,24 +1663,41 @@ export default function ManagerSchedule() {
               <div>
                 <div style={styles.sectionTitle}>Assign to:</div>
                 <div style={{ maxHeight: "300px", overflowY: "auto", marginTop: 8 }}>
-                  {employees.map((emp) => (
-                    <div
-                      key={emp.employee_id}
-                      style={{
-                        ...styles.row,
-                        cursor: "pointer",
-                        background: newShift.employee_id === emp.employee_id ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.04)",
-                      }}
-                      onClick={() => setNewShift({ ...newShift, employee_id: emp.employee_id })}
-                    >
-                      <div style={{ fontWeight: 900 }}>
-                        {emp.name} <span style={{ opacity: 0.7, fontSize: 12 }}>({emp.email})</span>
-                      </div>
-                      {newShift.employee_id === emp.employee_id && (
-                        <div style={{ ...styles.badge, ...styles.badgeGreen }}>SELECTED</div>
-                      )}
+                  {employees.length === 0 ? (
+                    <div style={{ ...styles.row, opacity: 0.7, cursor: "not-allowed" }}>
+                      <div>No employees found. Please add employees first.</div>
                     </div>
-                  ))}
+                  ) : (
+                    employees.map((emp) => (
+                      <div
+                        key={emp.employee_id}
+                        style={{
+                          ...styles.row,
+                          cursor: "pointer",
+                          background: newShift.employee_id === emp.employee_id ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.04)",
+                          transition: "background 0.2s",
+                        }}
+                        onClick={() => setNewShift({ ...newShift, employee_id: emp.employee_id })}
+                        onMouseEnter={(e) => {
+                          if (newShift.employee_id !== emp.employee_id) {
+                            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (newShift.employee_id !== emp.employee_id) {
+                            e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                          }
+                        }}
+                      >
+                        <div style={{ fontWeight: 900 }}>
+                          {emp.name} <span style={{ opacity: 0.7, fontSize: 12 }}>({emp.email})</span>
+                        </div>
+                        {newShift.employee_id === emp.employee_id && (
+                          <div style={{ ...styles.badge, ...styles.badgeGreen }}>SELECTED</div>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>

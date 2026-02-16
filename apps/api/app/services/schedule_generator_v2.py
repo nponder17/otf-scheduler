@@ -263,90 +263,98 @@ def generate_month_schedule(
         from app.scheduling.shift_templates import SHIFT_TEMPLATES
         from datetime import timedelta
         
-        # Generate shift instances from templates
-        current_date = month_start
-        created_count = 0
-        
-        while current_date <= month_end:
-            # Python weekday: Mon=0, Tue=1, ..., Sat=5, Sun=6
-            # Database convention: Sun=0, Mon=1, ..., Sat=6
-            python_dow = current_date.weekday()
-            db_dow = (python_dow + 1) % 7  # Convert to DB convention
+        try:
+            # Generate shift instances from templates
+            current_date = month_start
+            created_count = 0
             
-            # Check each template to see if it applies to this day
-            for template in SHIFT_TEMPLATES:
-                if db_dow in template["days"]:
-                    # Check if shift instance already exists
-                    existing = db.execute(
-                        select(ShiftInstance.shift_instance_id).where(
-                            and_(
-                                ShiftInstance.company_id == company_id,
-                                ShiftInstance.studio_id == studio_id,
-                                ShiftInstance.shift_date == current_date,
-                                ShiftInstance.label == template["label"],
+            while current_date <= month_end:
+                # Python weekday: Mon=0, Tue=1, ..., Sat=5, Sun=6
+                # Database convention: Sun=0, Mon=1, ..., Sat=6
+                python_dow = current_date.weekday()
+                db_dow = (python_dow + 1) % 7  # Convert to DB convention
+                
+                # Check each template to see if it applies to this day
+                for template in SHIFT_TEMPLATES:
+                    if db_dow in template["days"]:
+                        # Check if shift instance already exists
+                        existing = db.execute(
+                            select(ShiftInstance.shift_instance_id).where(
+                                and_(
+                                    ShiftInstance.company_id == company_id,
+                                    ShiftInstance.studio_id == studio_id,
+                                    ShiftInstance.shift_date == current_date,
+                                    ShiftInstance.label == template["label"],
+                                )
                             )
-                        )
-                    ).first()
-                    
-                    if not existing:
-                        # Parse times
-                        start_parts = template["start_hhmm"].split(":")
-                        end_parts = template["end_hhmm"].split(":")
-                        start_time_str = f"{int(start_parts[0]):02d}:{int(start_parts[1]):02d}:00"
-                        end_time_str = f"{int(end_parts[0]):02d}:{int(end_parts[1]):02d}:00"
+                        ).first()
                         
-                        # Use raw SQL to insert shift instance (bypasses foreign key constraint)
-                        # We generate a UUID for shift_template_id but it doesn't need to exist in shift_templates
-                        db.execute(
-                            text("""
-                                INSERT INTO shift_instances 
-                                (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
-                                 label, start_time, end_time, required_count, status)
-                                VALUES 
-                                (:company_id, :studio_id, gen_random_uuid(), :shift_date, :day_of_week,
-                                 :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
-                            """),
-                            {
-                                "company_id": str(company_id),
-                                "studio_id": str(studio_id),
-                                "shift_date": current_date,
-                                "day_of_week": db_dow,
-                                "label": template["label"],
-                                "start_time": start_time_str,
-                                "end_time": end_time_str,
-                                "required_count": template["required"],
-                            },
-                        )
-                        created_count += 1
+                        if not existing:
+                            # Parse times
+                            start_parts = template["start_hhmm"].split(":")
+                            end_parts = template["end_hhmm"].split(":")
+                            start_time_str = f"{int(start_parts[0]):02d}:{int(start_parts[1]):02d}:00"
+                            end_time_str = f"{int(end_parts[0]):02d}:{int(end_parts[1]):02d}:00"
+                            
+                            # Use raw SQL to insert shift instance
+                            # Note: shift_template_id foreign key may need to exist, but we'll try with gen_random_uuid()
+                            # If this fails, we may need to create templates first
+                            db.execute(
+                                text("""
+                                    INSERT INTO shift_instances 
+                                    (company_id, studio_id, shift_template_id, shift_date, day_of_week, 
+                                     label, start_time, end_time, required_count, status)
+                                    VALUES 
+                                    (:company_id, :studio_id, gen_random_uuid(), :shift_date, :day_of_week,
+                                     :label, CAST(:start_time AS time), CAST(:end_time AS time), :required_count, 'active')
+                                """),
+                                {
+                                    "company_id": str(company_id),
+                                    "studio_id": str(studio_id),
+                                    "shift_date": current_date,
+                                    "day_of_week": db_dow,
+                                    "label": template["label"],
+                                    "start_time": start_time_str,
+                                    "end_time": end_time_str,
+                                    "required_count": template["required"],
+                                },
+                            )
+                            created_count += 1
+                
+                current_date += timedelta(days=1)
             
-            current_date += timedelta(days=1)
-        
-        # Commit the generated shift instances
-        if created_count > 0:
-            db.commit()
-            # Reload demand after creating shift instances
-            demand = db.execute(
-                select(
-                    ShiftInstance.shift_date,
-                    ShiftInstance.day_of_week,
-                    ShiftInstance.label,
-                    ShiftInstance.start_time,
-                    ShiftInstance.end_time,
-                    ShiftInstance.required_count,
-                )
-                .where(
-                    and_(
-                        ShiftInstance.company_id == company_id,
-                        ShiftInstance.studio_id == studio_id,
-                        ShiftInstance.shift_date >= month_start,
-                        ShiftInstance.shift_date <= month_end,
+            # Commit the generated shift instances
+            if created_count > 0:
+                db.commit()
+                # Reload demand after creating shift instances
+                demand = db.execute(
+                    select(
+                        ShiftInstance.shift_date,
+                        ShiftInstance.day_of_week,
+                        ShiftInstance.label,
+                        ShiftInstance.start_time,
+                        ShiftInstance.end_time,
+                        ShiftInstance.required_count,
                     )
-                )
-                .order_by(ShiftInstance.shift_date, ShiftInstance.start_time)
-            ).all()
-        
-        if not demand:
-            raise HTTPException(status_code=400, detail="No shift_instances found for that company/studio/month and failed to generate from templates.")
+                    .where(
+                        and_(
+                            ShiftInstance.company_id == company_id,
+                            ShiftInstance.studio_id == studio_id,
+                            ShiftInstance.shift_date >= month_start,
+                            ShiftInstance.shift_date <= month_end,
+                        )
+                    )
+                    .order_by(ShiftInstance.shift_date, ShiftInstance.start_time)
+                ).all()
+            
+            if not demand:
+                raise HTTPException(status_code=400, detail="No shift_instances found for that company/studio/month and failed to generate from templates.")
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to auto-generate shift instances: {str(e)}. Please use /schedule/shift-instances/generate endpoint first."
+            )
     
     # Load employees
     employees = (

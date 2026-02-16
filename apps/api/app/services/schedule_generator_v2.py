@@ -15,7 +15,7 @@ from typing import Dict, List, Tuple, Optional, Set
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import and_, delete, select, text, func, func
+from sqlalchemy import and_, delete, select, text, func
 from sqlalchemy.orm import Session
 
 from app.models.availability import EmployeeAvailability

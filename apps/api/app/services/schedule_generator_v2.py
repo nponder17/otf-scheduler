@@ -258,8 +258,9 @@ def generate_month_schedule(
         .order_by(ShiftInstance.shift_date, ShiftInstance.start_time)
     ).all()
     
-    # If no shift instances exist, automatically generate them from templates
-    if not demand:
+    # Always check and generate missing shift instances from templates
+    # This ensures all required shifts exist even if some were already created
+    if True:  # Changed from "if not demand:" to always check
         from app.scheduling.shift_templates import SHIFT_TEMPLATES
         from app.models.shift_template import ShiftTemplate
         
@@ -392,26 +393,27 @@ def generate_month_schedule(
             # Commit the generated shift instances
             if created_count > 0:
                 db.commit()
-                # Reload demand after creating shift instances
-                demand = db.execute(
-                    select(
-                        ShiftInstance.shift_date,
-                        ShiftInstance.day_of_week,
-                        ShiftInstance.label,
-                        ShiftInstance.start_time,
-                        ShiftInstance.end_time,
-                        ShiftInstance.required_count,
+            
+            # Always reload demand after checking/creating shift instances
+            demand = db.execute(
+                select(
+                    ShiftInstance.shift_date,
+                    ShiftInstance.day_of_week,
+                    ShiftInstance.label,
+                    ShiftInstance.start_time,
+                    ShiftInstance.end_time,
+                    ShiftInstance.required_count,
+                )
+                .where(
+                    and_(
+                        ShiftInstance.company_id == company_id,
+                        ShiftInstance.studio_id == studio_id,
+                        ShiftInstance.shift_date >= month_start,
+                        ShiftInstance.shift_date <= month_end,
                     )
-                    .where(
-                        and_(
-                            ShiftInstance.company_id == company_id,
-                            ShiftInstance.studio_id == studio_id,
-                            ShiftInstance.shift_date >= month_start,
-                            ShiftInstance.shift_date <= month_end,
-                        )
-                    )
-                    .order_by(ShiftInstance.shift_date, ShiftInstance.start_time)
-                ).all()
+                )
+                .order_by(ShiftInstance.shift_date, ShiftInstance.start_time)
+            ).all()
             
             if not demand:
                 raise HTTPException(status_code=400, detail="No shift_instances found for that company/studio/month and failed to generate from templates.")

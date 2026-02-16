@@ -261,7 +261,6 @@ def generate_month_schedule(
     # If no shift instances exist, automatically generate them from templates
     if not demand:
         from app.scheduling.shift_templates import SHIFT_TEMPLATES
-        from datetime import timedelta
         from app.models.shift_template import ShiftTemplate
         
         try:

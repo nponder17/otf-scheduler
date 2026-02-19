@@ -133,6 +133,23 @@ function sortedEntries(obj?: Record<string, number>) {
 
 type ViewMode = "month" | "day" | "week" | "twoWeek";
 
+type InsightsEmployee = {
+  employee_id: string;
+  name: string;
+  hours_total: number;
+  hours_by_week: { week_start: string; hours: number }[];
+};
+
+type InsightsResponse = {
+  run: { schedule_run_id: string; month_start: string; month_end: string };
+  per_employee: InsightsEmployee[];
+  by_week: { week_start: string; total_hours: number; payroll: number | null }[];
+  month: { total_hours: number; employee_count: number; payroll: number | null };
+  default_hourly_rate: number | null;
+};
+
+type MainTab = "schedule" | "insights";
+
 export default function ManagerSchedule() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [studios, setStudios] = useState<Studio[]>([]);
@@ -181,6 +198,13 @@ export default function ManagerSchedule() {
   const [editingShift, setEditingShift] = useState<ScheduledShift | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [editLoading, setEditLoading] = useState(false);
+
+  // Main tab (Schedule vs Data Insights)
+  const [activeMainTab, setActiveMainTab] = useState<MainTab>("schedule");
+  const [insights, setInsights] = useState<InsightsResponse | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState("");
+  const [defaultHourlyRate, setDefaultHourlyRate] = useState<string>("25");
 
   // Add shift modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -290,6 +314,46 @@ export default function ManagerSchedule() {
       }
     })();
   }, [companyId]);
+
+  async function loadInsights() {
+    if (!runId) return;
+    setInsightsLoading(true);
+    setInsightsError("");
+    try {
+      const token = localStorage.getItem("auth_token");
+      const rate = defaultHourlyRate ? parseFloat(defaultHourlyRate) : undefined;
+      const url = `${API_BASE}/schedules/${runId}/insights${rate != null && !isNaN(rate) ? `?default_hourly_rate=${rate}` : ""}`;
+      const res = await fetch(url, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setInsightsError(data?.detail || `Failed to load insights (${res.status})`);
+        setInsights(null);
+        return;
+      }
+      const data = (await res.json()) as InsightsResponse;
+      setInsights(data);
+    } catch (e: any) {
+      setInsightsError(e?.message ?? "Failed to load insights");
+      setInsights(null);
+    } finally {
+      setInsightsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeMainTab === "insights" && runId) {
+      loadInsights();
+    }
+  }, [activeMainTab, runId]);
+
+  useEffect(() => {
+    if (!runId) {
+      setInsights(null);
+      setActiveMainTab("schedule");
+    }
+  }, [runId]);
 
   async function loadCoverageForRun(run: string) {
     const token = localStorage.getItem("auth_token");
@@ -1314,6 +1378,20 @@ export default function ManagerSchedule() {
 
         {runId && (
           <>
+            <div style={styles.segmented}>
+              <button
+                style={{ ...styles.segBtn, ...(activeMainTab === "schedule" ? styles.segActive : {}) }}
+                onClick={() => setActiveMainTab("schedule")}
+              >
+                Schedule
+              </button>
+              <button
+                style={{ ...styles.segBtn, ...(activeMainTab === "insights" ? styles.segActive : {}) }}
+                onClick={() => setActiveMainTab("insights")}
+              >
+                Data Insights
+              </button>
+            </div>
             <button
               style={styles.btn}
               onClick={() => {
@@ -1341,6 +1419,183 @@ export default function ManagerSchedule() {
         )}
       </div>
 
+      {msg && <div style={{ marginBottom: 10, opacity: 0.9 }}>{msg}</div>}
+
+      {/* DATA INSIGHTS TAB */}
+      {activeMainTab === "insights" && runId && (
+        <div
+          style={{
+            marginTop: 20,
+            padding: 20,
+            borderRadius: 18,
+            border: "1px solid rgba(255,255,255,0.10)",
+            background: "rgba(255,255,255,0.04)",
+          }}
+        >
+          <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 20 }}>Data Insights</div>
+
+          {/* Hourly rate input */}
+          <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
+            <label style={{ opacity: 0.9 }}>Default hourly rate for payroll estimate ($):</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={defaultHourlyRate}
+              onChange={(e) => setDefaultHourlyRate(e.target.value)}
+              style={{
+                width: 90,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.2)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#e9eaec",
+                fontSize: 16,
+              }}
+            />
+            <button
+              style={styles.btn}
+              onClick={() => loadInsights()}
+              disabled={insightsLoading}
+            >
+              {insightsLoading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+
+          {insightsError && <div style={{ color: "#ff8080", marginBottom: 12 }}>{insightsError}</div>}
+
+          {insightsLoading && !insights && <div style={{ opacity: 0.8 }}>Loading insights…</div>}
+
+          {insights && !insightsLoading && (
+            <>
+              {/* Month summary */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gap: 16,
+                  marginBottom: 24,
+                }}
+              >
+                <div style={styles.dayCard}>
+                  <div style={{ ...styles.small, marginBottom: 4 }}>Total hours (month)</div>
+                  <div style={{ fontSize: 28, fontWeight: 900 }}>{insights.month.total_hours}</div>
+                </div>
+                <div style={styles.dayCard}>
+                  <div style={{ ...styles.small, marginBottom: 4 }}>Employees scheduled</div>
+                  <div style={{ fontSize: 28, fontWeight: 900 }}>{insights.month.employee_count}</div>
+                </div>
+                <div style={styles.dayCard}>
+                  <div style={{ ...styles.small, marginBottom: 4 }}>Payroll estimate (month)</div>
+                  <div style={{ fontSize: 28, fontWeight: 900 }}>
+                    {insights.month.payroll != null ? `$${insights.month.payroll.toLocaleString()}` : "—"}
+                  </div>
+                </div>
+              </div>
+
+              {/* By week */}
+              <div style={{ ...styles.sectionTitle, marginBottom: 10 }}>By pay week (Sat–Sun)</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+                  gap: 12,
+                  marginBottom: 28,
+                }}
+              >
+                {insights.by_week.map((w) => (
+                  <div
+                    key={w.week_start}
+                    style={{
+                      ...styles.dayCard,
+                      padding: 14,
+                    }}
+                  >
+                    <div style={{ ...styles.small, marginBottom: 4 }}>{w.week_start}</div>
+                    <div style={{ fontWeight: 800 }}>{w.total_hours} hrs</div>
+                    {w.payroll != null && (
+                      <div style={{ ...styles.small, marginTop: 4 }}>${w.payroll.toLocaleString()}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Per employee */}
+              <div style={{ ...styles.sectionTitle, marginBottom: 10 }}>Per employee hours</div>
+              <div
+                style={{
+                  overflowX: "auto",
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "rgba(0,0,0,0.2)",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", padding: "12px 16px", ...styles.small }}>Employee</th>
+                      <th style={{ textAlign: "right", padding: "12px 16px", ...styles.small }}>Total (hrs)</th>
+                      {insights.default_hourly_rate != null && (
+                        <th style={{ textAlign: "right", padding: "12px 16px", ...styles.small }}>Payroll</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.per_employee.map((e) => (
+                      <tr
+                        key={e.employee_id}
+                        style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+                      >
+                        <td style={{ padding: "12px 16px", fontWeight: 600 }}>{e.name}</td>
+                        <td style={{ padding: "12px 16px", textAlign: "right" }}>{e.hours_total}</td>
+                        {insights.default_hourly_rate != null && (
+                          <td style={{ padding: "12px 16px", textAlign: "right", opacity: 0.9 }}>
+                            ${(e.hours_total * insights.default_hourly_rate).toLocaleString()}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Expandable week breakdown per employee (optional) */}
+              <details style={{ marginTop: 20 }}>
+                <summary style={{ cursor: "pointer", opacity: 0.9, fontWeight: 700 }}>Per employee by week</summary>
+                <div style={{ marginTop: 12 }}>
+                  {insights.per_employee.map((e) => (
+                    <div
+                      key={e.employee_id}
+                      style={{
+                        ...styles.row,
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ fontWeight: 800 }}>{e.name}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {e.hours_by_week.map((w) => (
+                          <span
+                            key={w.week_start}
+                            style={styles.badge}
+                          >
+                            {w.week_start}: {w.hours}h
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* SCHEDULE TAB: View + Content */}
+      {activeMainTab === "schedule" && (
+        <>
       {/* View + Navigation */}
       <div style={styles.navRow}>
         <div style={styles.segmented}>
@@ -1371,8 +1626,6 @@ export default function ManagerSchedule() {
           </div>
         )}
       </div>
-
-      {msg && <div style={{ marginBottom: 10, opacity: 0.9 }}>{msg}</div>}
 
       {/* MONTH VIEW */}
       {viewMode === "month" && (
@@ -1493,6 +1746,8 @@ export default function ManagerSchedule() {
             );
           })}
         </div>
+      )}
+        </>
       )}
 
       {/* AUDIT MODAL */}

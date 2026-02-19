@@ -349,6 +349,110 @@ def get_schedule_coverage(run_id: UUID, db: Session = Depends(get_db)):
     return {"run": dict(run), "coverage": [dict(r) for r in rows]}
 
 
+@router.get("/{run_id}/insights")
+def get_schedule_insights(
+    run_id: UUID,
+    default_hourly_rate: float | None = Query(None, description="Optional hourly rate for payroll estimate"),
+    db: Session = Depends(get_db),
+):
+    """
+    Data insights for a schedule run: per-employee hours, total hours,
+    and payroll estimate per week and per month (pay week = Saturday–Sunday).
+    """
+    run = db.execute(
+        text(
+            "SELECT schedule_run_id, company_id, studio_id, month_start, month_end FROM schedule_runs WHERE schedule_run_id = :run_id"
+        ),
+        {"run_id": str(run_id)},
+    ).mappings().first()
+
+    if not run:
+        raise HTTPException(status_code=404, detail="Schedule run not found")
+
+    # Each row: employee_id, name, shift_date, hours (decimal), pay_week_start (Saturday)
+    # PostgreSQL: Sun=0 .. Sat=6. Pay week starts Saturday: week_start = date - ((dow + 1) % 7)
+    rows = db.execute(
+        text(
+            """
+            SELECT
+              ss.employee_id,
+              e.name,
+              ss.shift_date,
+              (EXTRACT(EPOCH FROM (ss.end_time - ss.start_time)) / 3600.0)::numeric(10,2) AS hours,
+              (ss.shift_date - (((EXTRACT(DOW FROM ss.shift_date)::int + 1) % 7))::int)::date AS pay_week_start
+            FROM scheduled_shifts ss
+            JOIN employees e ON e.employee_id = ss.employee_id
+            WHERE ss.schedule_run_id = :run_id
+            ORDER BY e.name, ss.shift_date
+            """
+        ),
+        {"run_id": str(run_id)},
+    ).mappings().all()
+
+    month_start = run["month_start"]
+    month_end = run["month_end"]
+    rate = default_hourly_rate
+
+    # Build per-employee: total hours and by pay week
+    emp_map: dict = {}
+    week_totals: dict = {}
+    month_total_hours = 0.0
+
+    for r in rows:
+        eid = str(r["employee_id"])
+        name = str(r["name"])
+        hrs = float(r["hours"])
+        week_start = r["pay_week_start"].isoformat() if hasattr(r["pay_week_start"], "isoformat") else str(r["pay_week_start"])
+
+        month_total_hours += hrs
+
+        if eid not in emp_map:
+            emp_map[eid] = {"employee_id": eid, "name": name, "hours_total": 0.0, "hours_by_week": {}}
+        emp_map[eid]["hours_total"] += hrs
+        emp_map[eid]["hours_by_week"][week_start] = emp_map[eid]["hours_by_week"].get(week_start, 0) + hrs
+
+        week_totals[week_start] = week_totals.get(week_start, 0) + hrs
+
+    # Format per_employee list: hours_by_week as list of { week_start, hours }
+    per_employee = []
+    for e in emp_map.values():
+        per_employee.append({
+            "employee_id": e["employee_id"],
+            "name": e["name"],
+            "hours_total": round(e["hours_total"], 2),
+            "hours_by_week": [{"week_start": w, "hours": round(h, 2)} for w, h in sorted(e["hours_by_week"].items())],
+        })
+
+    per_employee.sort(key=lambda x: x["name"])
+
+    by_week = [
+        {
+            "week_start": w,
+            "total_hours": round(h, 2),
+            "payroll": round(h * rate, 2) if rate is not None else None,
+        }
+        for w, h in sorted(week_totals.items())
+    ]
+
+    month_payroll = round(month_total_hours * rate, 2) if rate is not None else None
+
+    return {
+        "run": {
+            "schedule_run_id": str(run_id),
+            "month_start": str(month_start),
+            "month_end": str(month_end),
+        },
+        "per_employee": per_employee,
+        "by_week": by_week,
+        "month": {
+            "total_hours": round(month_total_hours, 2),
+            "employee_count": len(emp_map),
+            "payroll": month_payroll,
+        },
+        "default_hourly_rate": rate,
+    }
+
+
 @router.get("/{run_id}/audit/shift")
 def get_shift_audit(
     run_id: UUID,

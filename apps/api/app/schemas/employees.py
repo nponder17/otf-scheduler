@@ -17,6 +17,7 @@ class EmployeeOut(BaseModel):
     phone: Optional[str] = None
     hire_date: Optional[date] = None
     is_active: bool
+    hourly_rate: Optional[float] = None
     form_url: str
     last_availability_submit_at: Optional[datetime] = None
     availability_status: Literal["ok", "missing", "stale"] = "missing"

@@ -9,6 +9,7 @@ type EmployeeCreatePayload = {
   email: string;
   phone?: string | null;
   hire_date?: string | null;
+  hourly_rate?: number | null;
 };
 
 type EmployeeOut = {
@@ -19,6 +20,7 @@ type EmployeeOut = {
   phone: string | null;
   hire_date: string | null;
   is_active: boolean;
+  hourly_rate: number | null;
   form_url?: string | null;
 };
 
@@ -43,6 +45,7 @@ export default function AddEmployee() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [hireDate, setHireDate] = useState("");
+  const [hourlyRate, setHourlyRate] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string>("");
@@ -119,11 +122,13 @@ export default function AddEmployee() {
       return;
     }
 
+    const rateNum = hourlyRate.trim() ? parseFloat(hourlyRate.trim()) : null;
     const payload: EmployeeCreatePayload = {
       name: name.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim() ? phone.trim() : null,
       hire_date: hireDate.trim() ? hireDate.trim() : null,
+      hourly_rate: rateNum != null && !isNaN(rateNum) && rateNum >= 0 ? rateNum : null,
     };
 
     setSubmitting(true);
@@ -414,6 +419,18 @@ export default function AddEmployee() {
           }}
         />
         {showHireErr && <div style={styles.errorText}>{fieldErrors.hireDate}</div>}
+
+        <div style={styles.label}>Hourly rate (optional, for payroll insights)</div>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={hourlyRate}
+          onChange={(e) => setHourlyRate(e.target.value)}
+          placeholder="e.g. 25.00"
+          disabled={submitting}
+          style={styles.input}
+        />
       </div>
 
       <div style={styles.buttonRow}>

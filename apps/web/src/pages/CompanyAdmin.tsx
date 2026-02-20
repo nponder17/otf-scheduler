@@ -21,6 +21,7 @@ type Employee = {
   phone: string | null;
   hire_date: string | null;
   is_active: boolean;
+  hourly_rate: number | null;
 };
 
 export default function CompanyAdmin() {
@@ -38,6 +39,9 @@ export default function CompanyAdmin() {
 
   const [clearingForms, setClearingForms] = useState(false);
   const [clearingSchedule, setClearingSchedule] = useState(false);
+  const [editingRateFor, setEditingRateFor] = useState<string | null>(null);
+  const [editingRateValue, setEditingRateValue] = useState("");
+  const [savingRate, setSavingRate] = useState(false);
 
   async function load() {
     try {
@@ -85,6 +89,49 @@ export default function CompanyAdmin() {
       window.alert("Copied!");
     } catch {
       window.alert("Failed to copy");
+    }
+  }
+
+  function startEditRate(emp: Employee) {
+    setEditingRateFor(emp.employee_id);
+    setEditingRateValue(emp.hourly_rate != null ? String(emp.hourly_rate) : "");
+  }
+
+  function cancelEditRate() {
+    setEditingRateFor(null);
+    setEditingRateValue("");
+  }
+
+  async function saveRate(employeeId: string) {
+    if (!isValidCompanyId) return;
+    const val = editingRateValue.trim();
+    const num = val === "" ? null : parseFloat(val);
+    if (val !== "" && (isNaN(num!) || num! < 0)) {
+      window.alert("Enter a valid number ≥ 0 or leave empty.");
+      return;
+    }
+    setSavingRate(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(
+        `${API_BASE}/admin/companies/${companyIdStr}/employees/${employeeId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ hourly_rate: num }),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to update rate");
+      await load();
+      setEditingRateFor(null);
+      setEditingRateValue("");
+    } catch (e: any) {
+      window.alert(e?.message ?? "Failed to save rate");
+    } finally {
+      setSavingRate(false);
     }
   }
 
@@ -435,10 +482,64 @@ export default function CompanyAdmin() {
             const formPath = `/form/${e.employee_id}?companyId=${companyIdEncoded}`;
             const formUrl = `${WEB_BASE}${formPath}`;
 
+            const isEditingRate = editingRateFor === e.employee_id;
             return (
               <div key={e.employee_id} style={styles.employeeCard}>
                 <div style={styles.employeeName}>{e.name}</div>
                 <div style={styles.employeeEmail}>{e.email}</div>
+
+                <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ opacity: 0.85, fontSize: 14 }}>Hourly rate:</span>
+                  {isEditingRate ? (
+                    <>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editingRateValue}
+                        onChange={(ev) => setEditingRateValue(ev.target.value)}
+                        placeholder="e.g. 25"
+                        style={{
+                          width: 80,
+                          padding: "6px 8px",
+                          borderRadius: 8,
+                          border: "1px solid rgba(255,255,255,0.2)",
+                          background: "rgba(255,255,255,0.06)",
+                          color: "#e9eaec",
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveRate(e.employee_id)}
+                        disabled={savingRate}
+                        style={{ ...styles.actionButton, padding: "6px 10px", fontSize: 13 }}
+                      >
+                        {savingRate ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditRate}
+                        disabled={savingRate}
+                        style={{ ...styles.actionButtonSecondary, padding: "6px 10px", fontSize: 13 }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontWeight: 600 }}>
+                        {e.hourly_rate != null ? `$${Number(e.hourly_rate).toFixed(2)}` : "—"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startEditRate(e)}
+                        style={{ ...styles.actionButtonSecondary, padding: "4px 8px", fontSize: 12 }}
+                      >
+                        Edit
+                      </button>
+                    </>
+                  )}
+                </div>
 
                 <div style={styles.formLinkLabel}>Form link:</div>
                 <div style={styles.formLink}>{formUrl}</div>

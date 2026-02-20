@@ -15,6 +15,11 @@ class EmployeeCreate(BaseModel):
     email: EmailStr
     phone: str | None = None
     hire_date: date | None = None
+    hourly_rate: float | None = None
+
+
+class EmployeeUpdate(BaseModel):
+    hourly_rate: float | None = None
 
 class EmployeeRoleAssign(BaseModel):
     role_ids: list[UUID] = Field(default_factory=list)

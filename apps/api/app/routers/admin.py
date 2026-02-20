@@ -12,6 +12,7 @@ from app.schemas.admin import (
     CompanyCreate,
     RoleCreate,
     EmployeeCreate,
+    EmployeeUpdate,
     EmployeeRoleAssign,
 )
 from app.schemas.company import CompanyOut
@@ -252,6 +253,7 @@ def create_employee(
         phone=payload.phone,
         hire_date=payload.hire_date,
         is_active=True,
+        hourly_rate=payload.hourly_rate,
     )
     db.add(e)
     db.commit()
@@ -265,6 +267,7 @@ def create_employee(
         phone=e.phone,
         hire_date=e.hire_date,
         is_active=e.is_active,
+        hourly_rate=float(e.hourly_rate) if e.hourly_rate is not None else None,
         form_url=f"{FORM_BASE_URL}/form/{e.employee_id}",
     )
 
@@ -299,10 +302,43 @@ def list_employees(
                 phone=e.phone,
                 hire_date=e.hire_date,
                 is_active=e.is_active,
+                hourly_rate=float(e.hourly_rate) if e.hourly_rate is not None else None,
                 form_url=f"{FORM_BASE_URL}/form/{e.employee_id}",
             )
         )
     return out
+
+
+@router.patch("/companies/{company_id}/employees/{employee_id}", response_model=EmployeeOut)
+def update_employee(
+    company_id: UUID,
+    employee_id: UUID,
+    payload: EmployeeUpdate,
+    db: Session = Depends(get_db),
+    user_and_company: tuple[Union[Manager, SystemAdmin], Optional[UUID]] = Depends(get_current_manager_or_admin),
+):
+    """Update employee (e.g. hourly rate). Managers can only update employees in their own company."""
+    user, user_company_id = user_and_company
+    if user_company_id and user_company_id != company_id:
+        raise HTTPException(status_code=403, detail="You can only update employees in your own company")
+    emp = db.get(Employee, employee_id)
+    if not emp or str(emp.company_id) != str(company_id):
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if payload.hourly_rate is not None:
+        emp.hourly_rate = payload.hourly_rate
+    db.commit()
+    db.refresh(emp)
+    return EmployeeOut(
+        employee_id=str(emp.employee_id),
+        company_id=str(emp.company_id),
+        name=emp.name,
+        email=emp.email,
+        phone=emp.phone,
+        hire_date=emp.hire_date,
+        is_active=emp.is_active,
+        hourly_rate=float(emp.hourly_rate) if emp.hourly_rate is not None else None,
+        form_url=f"{FORM_BASE_URL}/form/{emp.employee_id}",
+    )
 
 
 # --- Assign roles to an employee ---

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Date, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Date, Boolean, DateTime, ForeignKey, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
@@ -24,5 +24,6 @@ class Employee(Base):
 
     hire_date = Column(Date, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    hourly_rate = Column(Numeric(10, 2), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

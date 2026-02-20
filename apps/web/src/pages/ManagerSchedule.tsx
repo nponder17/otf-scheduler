@@ -136,7 +136,9 @@ type ViewMode = "month" | "day" | "week" | "twoWeek";
 type InsightsEmployee = {
   employee_id: string;
   name: string;
+  hourly_rate: number | null;
   hours_total: number;
+  payroll: number | null;
   hours_by_week: { week_start: string; hours: number }[];
 };
 
@@ -1534,10 +1536,9 @@ export default function ManagerSchedule() {
                   <thead>
                     <tr>
                       <th style={{ textAlign: "left", padding: "12px 16px", ...styles.small }}>Employee</th>
-                      <th style={{ textAlign: "right", padding: "12px 16px", ...styles.small }}>Total (hrs)</th>
-                      {insights.default_hourly_rate != null && (
-                        <th style={{ textAlign: "right", padding: "12px 16px", ...styles.small }}>Payroll</th>
-                      )}
+                      <th style={{ textAlign: "right", padding: "12px 16px", ...styles.small }}>Rate ($)</th>
+                      <th style={{ textAlign: "right", padding: "12px 16px", ...styles.small }}>Hours</th>
+                      <th style={{ textAlign: "right", padding: "12px 16px", ...styles.small }}>Payroll</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1547,12 +1548,13 @@ export default function ManagerSchedule() {
                         style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
                       >
                         <td style={{ padding: "12px 16px", fontWeight: 600 }}>{e.name}</td>
+                        <td style={{ padding: "12px 16px", textAlign: "right", opacity: 0.9 }}>
+                          {e.hourly_rate != null ? e.hourly_rate.toFixed(2) : "—"}
+                        </td>
                         <td style={{ padding: "12px 16px", textAlign: "right" }}>{e.hours_total}</td>
-                        {insights.default_hourly_rate != null && (
-                          <td style={{ padding: "12px 16px", textAlign: "right", opacity: 0.9 }}>
-                            ${(e.hours_total * insights.default_hourly_rate).toLocaleString()}
-                          </td>
-                        )}
+                        <td style={{ padding: "12px 16px", textAlign: "right", opacity: 0.9 }}>
+                          {e.payroll != null ? `$${e.payroll.toLocaleString()}` : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

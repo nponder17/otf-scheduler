@@ -369,14 +369,14 @@ def get_schedule_insights(
     if not run:
         raise HTTPException(status_code=404, detail="Schedule run not found")
 
-    # Each row: employee_id, name, shift_date, hours (decimal), pay_week_start (Saturday)
-    # PostgreSQL: Sun=0 .. Sat=6. Pay week starts Saturday: week_start = date - ((dow + 1) % 7)
+    # Each row: employee_id, name, hourly_rate, shift_date, hours, pay_week_start
     rows = db.execute(
         text(
             """
             SELECT
               ss.employee_id,
               e.name,
+              e.hourly_rate,
               ss.shift_date,
               (EXTRACT(EPOCH FROM (ss.end_time - ss.start_time)) / 3600.0)::numeric(10,2) AS hours,
               (ss.shift_date - (((EXTRACT(DOW FROM ss.shift_date)::int + 1) % 7))::int)::date AS pay_week_start
@@ -391,35 +391,53 @@ def get_schedule_insights(
 
     month_start = run["month_start"]
     month_end = run["month_end"]
-    rate = default_hourly_rate
+    default_rate = default_hourly_rate
 
-    # Build per-employee: total hours and by pay week
+    # Build per-employee: total hours, by pay week, and hourly_rate
     emp_map: dict = {}
-    week_totals: dict = {}
+    week_totals: dict = {}   # week_start -> total_hours
+    week_payroll: dict = {}  # week_start -> sum of (hours * rate) per employee
     month_total_hours = 0.0
+    month_payroll_sum = 0.0
 
     for r in rows:
         eid = str(r["employee_id"])
         name = str(r["name"])
+        emp_rate = float(r["hourly_rate"]) if r.get("hourly_rate") is not None else None
         hrs = float(r["hours"])
         week_start = r["pay_week_start"].isoformat() if hasattr(r["pay_week_start"], "isoformat") else str(r["pay_week_start"])
+        rate_used = emp_rate if emp_rate is not None else default_rate
+        payroll_this = hrs * rate_used if rate_used is not None else None
 
         month_total_hours += hrs
+        if payroll_this is not None:
+            week_payroll[week_start] = week_payroll.get(week_start, 0) + payroll_this
+            month_payroll_sum += payroll_this
 
         if eid not in emp_map:
-            emp_map[eid] = {"employee_id": eid, "name": name, "hours_total": 0.0, "hours_by_week": {}}
+            emp_map[eid] = {
+                "employee_id": eid,
+                "name": name,
+                "hourly_rate": round(emp_rate, 2) if emp_rate is not None else None,
+                "hours_total": 0.0,
+                "hours_by_week": {},
+            }
         emp_map[eid]["hours_total"] += hrs
         emp_map[eid]["hours_by_week"][week_start] = emp_map[eid]["hours_by_week"].get(week_start, 0) + hrs
 
         week_totals[week_start] = week_totals.get(week_start, 0) + hrs
 
-    # Format per_employee list: hours_by_week as list of { week_start, hours }
+    # Format per_employee with payroll using employee rate or default
     per_employee = []
     for e in emp_map.values():
+        rate_used = e["hourly_rate"] if e["hourly_rate"] is not None else default_rate
+        payroll = round(e["hours_total"] * rate_used, 2) if rate_used is not None else None
         per_employee.append({
             "employee_id": e["employee_id"],
             "name": e["name"],
+            "hourly_rate": e["hourly_rate"],
             "hours_total": round(e["hours_total"], 2),
+            "payroll": payroll,
             "hours_by_week": [{"week_start": w, "hours": round(h, 2)} for w, h in sorted(e["hours_by_week"].items())],
         })
 
@@ -428,13 +446,13 @@ def get_schedule_insights(
     by_week = [
         {
             "week_start": w,
-            "total_hours": round(h, 2),
-            "payroll": round(h * rate, 2) if rate is not None else None,
+            "total_hours": round(week_totals[w], 2),
+            "payroll": round(week_payroll[w], 2) if w in week_payroll else None,
         }
-        for w, h in sorted(week_totals.items())
+        for w in sorted(week_totals.keys())
     ]
 
-    month_payroll = round(month_total_hours * rate, 2) if rate is not None else None
+    month_payroll = round(month_payroll_sum, 2) if month_payroll_sum else (round(month_total_hours * default_rate, 2) if default_rate is not None else None)
 
     return {
         "run": {
@@ -449,7 +467,7 @@ def get_schedule_insights(
             "employee_count": len(emp_map),
             "payroll": month_payroll,
         },
-        "default_hourly_rate": rate,
+        "default_hourly_rate": default_rate,
     }
 
 

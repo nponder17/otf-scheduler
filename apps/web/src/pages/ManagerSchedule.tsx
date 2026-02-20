@@ -1561,33 +1561,49 @@ export default function ManagerSchedule() {
                 </table>
               </div>
 
-              {/* Expandable week breakdown per employee (optional) */}
+              {/* Expandable week breakdown per employee */}
               <details style={{ marginTop: 20 }}>
-                <summary style={{ cursor: "pointer", opacity: 0.9, fontWeight: 700 }}>Per employee by week</summary>
-                <div style={{ marginTop: 12 }}>
-                  {insights.per_employee.map((e) => (
-                    <div
-                      key={e.employee_id}
-                      style={{
-                        ...styles.row,
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        gap: 6,
-                      }}
-                    >
-                      <div style={{ fontWeight: 800 }}>{e.name}</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        {e.hours_by_week.map((w) => (
-                          <span
-                            key={w.week_start}
-                            style={styles.badge}
-                          >
-                            {w.week_start}: {w.hours}h
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                <summary style={{ cursor: "pointer", opacity: 0.9, fontWeight: 700 }}>▼ Per employee by week</summary>
+                <div style={{ marginTop: 12, overflowX: "auto" }}>
+                  {(() => {
+                    const weekStarts = Array.from(
+                      new Set(insights.per_employee.flatMap((e) => e.hours_by_week.map((w) => w.week_start)))
+                    ).sort();
+                    const formatWeek = (d: string) => {
+                      const [y, m, day] = d.split("-").map(Number);
+                      const date = new Date(y, m - 1, day);
+                      return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                    };
+                    return (
+                      <table style={{ width: "100%", minWidth: 320, borderCollapse: "collapse", fontSize: 14 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", padding: "10px 12px", ...styles.small, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>Employee</th>
+                            {weekStarts.map((w) => (
+                              <th key={w} style={{ textAlign: "right", padding: "10px 12px", ...styles.small, borderBottom: "1px solid rgba(255,255,255,0.12)" }} title={w}>
+                                {formatWeek(w)}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {insights.per_employee.map((e) => {
+                            const byWeek = Object.fromEntries(e.hours_by_week.map((w) => [w.week_start, w.hours]));
+                            return (
+                              <tr key={e.employee_id} style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                                <td style={{ padding: "10px 12px", fontWeight: 600 }}>{e.name}</td>
+                                {weekStarts.map((w) => (
+                                  <td key={w} style={{ padding: "10px 12px", textAlign: "right", opacity: 0.9 }}>
+                                    {byWeek[w] != null ? `${byWeek[w]}h` : "—"}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
                 </div>
               </details>
             </>

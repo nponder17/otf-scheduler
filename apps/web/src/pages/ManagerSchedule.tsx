@@ -147,6 +147,10 @@ type InsightsResponse = {
   per_employee: InsightsEmployee[];
   by_week: { week_start: string; total_hours: number; payroll: number | null }[];
   month: { total_hours: number; employee_count: number; payroll: number | null };
+  overtime_alerts?: { employee_id: string; name: string; week_start: string; hours: number; threshold: number }[];
+  overtime_threshold?: number;
+  prior_month?: { month_start: string; month_end: string; total_hours: number; payroll: number | null };
+  comparison?: { hours_change_pct: number | null; payroll_change_pct: number | null };
   default_hourly_rate: number | null;
 };
 
@@ -207,6 +211,7 @@ export default function ManagerSchedule() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState("");
   const [defaultHourlyRate, setDefaultHourlyRate] = useState<string>("25");
+  const [overtimeThreshold, setOvertimeThreshold] = useState<string>("40");
 
   // Add shift modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -324,7 +329,12 @@ export default function ManagerSchedule() {
     try {
       const token = localStorage.getItem("auth_token");
       const rate = defaultHourlyRate ? parseFloat(defaultHourlyRate) : undefined;
-      const url = `${API_BASE}/schedules/${runId}/insights${rate != null && !isNaN(rate) ? `?default_hourly_rate=${rate}` : ""}`;
+      const ot = overtimeThreshold ? parseFloat(overtimeThreshold) : 40;
+      const params = new URLSearchParams();
+      if (rate != null && !isNaN(rate)) params.set("default_hourly_rate", String(rate));
+      if (ot != null && !isNaN(ot)) params.set("overtime_threshold", String(ot));
+      const qs = params.toString();
+      const url = `${API_BASE}/schedules/${runId}/insights${qs ? `?${qs}` : ""}`;
       const res = await fetch(url, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
@@ -1436,25 +1446,46 @@ export default function ManagerSchedule() {
         >
           <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 20 }}>Data Insights</div>
 
-          {/* Hourly rate input */}
-          <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
-            <label style={{ opacity: 0.9 }}>Default hourly rate for payroll estimate ($):</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={defaultHourlyRate}
-              onChange={(e) => setDefaultHourlyRate(e.target.value)}
-              style={{
-                width: 90,
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.2)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#e9eaec",
-                fontSize: 16,
-              }}
-            />
+          {/* Hourly rate and overtime threshold inputs */}
+          <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <label style={{ opacity: 0.9 }}>Default hourly rate ($):</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={defaultHourlyRate}
+                onChange={(e) => setDefaultHourlyRate(e.target.value)}
+                style={{
+                  width: 70,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#e9eaec",
+                  fontSize: 16,
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <label style={{ opacity: 0.9 }}>Overtime threshold (hrs/week):</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={overtimeThreshold}
+                onChange={(e) => setOvertimeThreshold(e.target.value)}
+                style={{
+                  width: 60,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#e9eaec",
+                  fontSize: 16,
+                }}
+              />
+            </div>
             <button
               style={styles.btn}
               onClick={() => loadInsights()}
@@ -1493,7 +1524,69 @@ export default function ManagerSchedule() {
                     {insights.month.payroll != null ? `$${insights.month.payroll.toLocaleString()}` : "—"}
                   </div>
                 </div>
+                {insights.comparison && insights.prior_month && (
+                  <div style={styles.dayCard}>
+                    <div style={{ ...styles.small, marginBottom: 4 }}>vs prior month</div>
+                    <div style={{ fontSize: 16, fontWeight: 700 }}>
+                      {insights.comparison.hours_change_pct != null && (
+                        <div style={{ marginBottom: 4 }}>
+                          Hours: <span style={{ color: (insights.comparison.hours_change_pct >= 0 ? "#7ee787" : "#ff8080") }}>
+                            {insights.comparison.hours_change_pct >= 0 ? "+" : ""}{insights.comparison.hours_change_pct}%
+                          </span>
+                        </div>
+                      )}
+                      {insights.comparison.payroll_change_pct != null && (
+                        <div>
+                          Payroll: <span style={{ color: (insights.comparison.payroll_change_pct >= 0 ? "#7ee787" : "#ff8080") }}>
+                            {insights.comparison.payroll_change_pct >= 0 ? "+" : ""}{insights.comparison.payroll_change_pct}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ ...styles.small, marginTop: 6, opacity: 0.8 }}>
+                      vs {insights.prior_month.month_start} → {insights.prior_month.month_end}
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Overtime alerts */}
+              {insights.overtime_alerts && insights.overtime_alerts.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ ...styles.sectionTitle, color: "#f59e0b", marginBottom: 10 }}>
+                    ⚠ Overtime alerts ({insights.overtime_alerts.length})
+                  </div>
+                  <div
+                    style={{
+                      overflowX: "auto",
+                      borderRadius: 14,
+                      border: "1px solid rgba(245,158,11,0.3)",
+                      background: "rgba(245,158,11,0.08)",
+                    }}
+                  >
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 300, fontSize: 14 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", padding: "10px 14px", ...styles.small }}>Employee</th>
+                          <th style={{ textAlign: "left", padding: "10px 14px", ...styles.small }}>Week</th>
+                          <th style={{ textAlign: "right", padding: "10px 14px", ...styles.small }}>Hours</th>
+                          <th style={{ textAlign: "right", padding: "10px 14px", ...styles.small }}>Threshold</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {insights.overtime_alerts.map((a, i) => (
+                          <tr key={`${a.employee_id}-${a.week_start}-${i}`} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                            <td style={{ padding: "10px 14px", fontWeight: 600 }}>{a.name}</td>
+                            <td style={{ padding: "10px 14px", opacity: 0.9 }}>{a.week_start}</td>
+                            <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700 }}>{a.hours}h</td>
+                            <td style={{ padding: "10px 14px", textAlign: "right", opacity: 0.8 }}>≥{a.threshold}h</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* By week */}
               <div style={{ ...styles.sectionTitle, marginBottom: 10 }}>By pay week (Sat–Sun)</div>

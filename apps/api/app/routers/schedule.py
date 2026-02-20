@@ -353,6 +353,7 @@ def get_schedule_coverage(run_id: UUID, db: Session = Depends(get_db)):
 def get_schedule_insights(
     run_id: UUID,
     default_hourly_rate: float | None = Query(None, description="Optional hourly rate for payroll estimate"),
+    overtime_threshold: float = Query(40, description="Hours per pay week that triggers overtime alert"),
     db: Session = Depends(get_db),
 ):
     """
@@ -454,6 +455,85 @@ def get_schedule_insights(
 
     month_payroll = round(month_payroll_sum, 2) if month_payroll_sum else (round(month_total_hours * default_rate, 2) if default_rate is not None else None)
 
+    # Overtime alerts: employee-weeks where hours >= threshold
+    overtime_alerts = []
+    for e in emp_map.values():
+        for w, h in e["hours_by_week"].items():
+            if h >= overtime_threshold:
+                overtime_alerts.append({
+                    "employee_id": e["employee_id"],
+                    "name": e["name"],
+                    "week_start": w,
+                    "hours": round(h, 2),
+                    "threshold": overtime_threshold,
+                })
+    overtime_alerts.sort(key=lambda x: (x["week_start"], x["name"]))
+
+    # Prior month comparison: find most recent run for same company+studio with earlier month
+    prior_month: dict | None = None
+    prior_run = db.execute(
+        text(
+            """
+            SELECT schedule_run_id, month_start, month_end
+            FROM schedule_runs
+            WHERE company_id = :company_id AND studio_id = :studio_id
+              AND schedule_run_id != :run_id
+              AND month_end < :current_month_start
+            ORDER BY month_end DESC
+            LIMIT 1
+            """
+        ),
+        {
+            "company_id": str(run["company_id"]),
+            "studio_id": str(run["studio_id"]),
+            "run_id": str(run_id),
+            "current_month_start": month_start,
+        },
+    ).mappings().first()
+
+    if prior_run:
+        prior_rows = db.execute(
+            text(
+                """
+                SELECT
+                  ss.employee_id,
+                  e.hourly_rate,
+                  (EXTRACT(EPOCH FROM (ss.end_time - ss.start_time)) / 3600.0)::numeric(10,2) AS hours
+                FROM scheduled_shifts ss
+                JOIN employees e ON e.employee_id = ss.employee_id
+                WHERE ss.schedule_run_id = :prior_run_id
+                """
+            ),
+            {"prior_run_id": str(prior_run["schedule_run_id"])},
+        ).mappings().all()
+        prior_hours = sum(float(r["hours"]) for r in prior_rows)
+        prior_payroll = 0.0
+        for r in prior_rows:
+            rate = float(r["hourly_rate"]) if r.get("hourly_rate") is not None else default_rate
+            if rate is not None:
+                prior_payroll += float(r["hours"]) * rate
+        prior_month = {
+            "month_start": str(prior_run["month_start"]),
+            "month_end": str(prior_run["month_end"]),
+            "total_hours": round(prior_hours, 2),
+            "payroll": round(prior_payroll, 2) if prior_payroll else None,
+        }
+
+    comparison = None
+    if prior_month:
+        hrs_curr = month_total_hours
+        hrs_prior = prior_month["total_hours"]
+        pct = ((hrs_curr - hrs_prior) / hrs_prior * 100) if hrs_prior else None
+        payroll_curr = month_payroll_sum if month_payroll_sum else (month_total_hours * default_rate if default_rate else None)
+        payroll_prior = prior_month.get("payroll")
+        payroll_pct = None
+        if payroll_curr is not None and payroll_prior is not None and payroll_prior:
+            payroll_pct = round((payroll_curr - payroll_prior) / payroll_prior * 100, 1)
+        comparison = {
+            "hours_change_pct": round(pct, 1) if pct is not None else None,
+            "payroll_change_pct": payroll_pct,
+        }
+
     return {
         "run": {
             "schedule_run_id": str(run_id),
@@ -467,6 +547,10 @@ def get_schedule_insights(
             "employee_count": len(emp_map),
             "payroll": month_payroll,
         },
+        "overtime_alerts": overtime_alerts,
+        "overtime_threshold": overtime_threshold,
+        "prior_month": prior_month,
+        "comparison": comparison,
         "default_hourly_rate": default_rate,
     }
 

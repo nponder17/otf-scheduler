@@ -151,6 +151,17 @@ type InsightsResponse = {
   overtime_threshold?: number;
   prior_month?: { month_start: string; month_end: string; total_hours: number; payroll: number | null };
   comparison?: { hours_change_pct: number | null; payroll_change_pct: number | null };
+  ft_under_target?: { employee_id: string; name: string; week_start: string; hours: number; target: number }[];
+  pt_over_ideal?: { employee_id: string; name: string; hours_total: number; ideal_per_week: number; avg_weekly: number }[];
+  clopen_count?: number;
+  clopens?: { employee_id: string; name: string; date: string }[];
+  fairness?: {
+    weekend_match_rate: number | null;
+    weekend_matched: number;
+    weekend_total: number;
+    by_employee: { employee_id: string; name: string; preference: string; matched: number; total_weekend_shifts: number }[];
+  } | null;
+  pto_acceptance?: { total_requests: number; accepted: number; denied: number; acceptance_rate_pct: number | null } | null;
   default_hourly_rate: number | null;
 };
 
@@ -1584,6 +1595,129 @@ export default function ManagerSchedule() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+
+              {/* FT/PT target summary */}
+              {((insights.ft_under_target && insights.ft_under_target.length > 0) ||
+                (insights.pt_over_ideal && insights.pt_over_ideal.length > 0)) && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ ...styles.sectionTitle, marginBottom: 10 }}>FT/PT target summary</div>
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                    {insights.ft_under_target && insights.ft_under_target.length > 0 && (
+                      <div
+                        style={{
+                          flex: "1 1 280px",
+                          padding: 14,
+                          borderRadius: 14,
+                          border: "1px solid rgba(245,158,11,0.3)",
+                          background: "rgba(245,158,11,0.08)",
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, marginBottom: 8 }}>FT under 30h/week</div>
+                        {insights.ft_under_target.map((x) => (
+                          <div key={`${x.employee_id}-${x.week_start}`} style={{ marginBottom: 4 }}>
+                            {x.name}: {x.hours}h (week {x.week_start})
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {insights.pt_over_ideal && insights.pt_over_ideal.length > 0 && (
+                      <div
+                        style={{
+                          flex: "1 1 280px",
+                          padding: 14,
+                          borderRadius: 14,
+                          border: "1px solid rgba(245,158,11,0.3)",
+                          background: "rgba(245,158,11,0.08)",
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, marginBottom: 8 }}>PT over ideal hours</div>
+                        {insights.pt_over_ideal.map((x) => (
+                          <div key={x.employee_id} style={{ marginBottom: 4 }}>
+                            {x.name}: {x.hours_total}h total, {x.avg_weekly}h/week avg (ideal {x.ideal_per_week})
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Clopen count */}
+              {insights.clopen_count != null && insights.clopen_count > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ ...styles.sectionTitle, marginBottom: 10 }}>Clopen alerts (close → open)</div>
+                  <div
+                    style={{
+                      padding: 14,
+                      borderRadius: 14,
+                      border: "1px solid rgba(239,68,68,0.3)",
+                      background: "rgba(239,68,68,0.08)",
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{insights.clopen_count} clopen(s) in schedule</div>
+                    {insights.clopens && insights.clopens.map((c, i) => (
+                      <div key={`${c.employee_id}-${c.date}-${i}`} style={{ marginBottom: 4 }}>
+                        {c.name} on {c.date}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Fairness (weekend preference match) */}
+              {insights.fairness && insights.fairness.weekend_total > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ ...styles.sectionTitle, marginBottom: 10 }}>Fairness (weekend preference match)</div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 16,
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={styles.dayCard}>
+                      <div style={{ ...styles.small, marginBottom: 4 }}>Match rate</div>
+                      <div style={{ fontSize: 24, fontWeight: 900 }}>
+                        {insights.fairness.weekend_match_rate != null
+                          ? `${Math.round(insights.fairness.weekend_match_rate * 100)}%`
+                          : "—"}
+                      </div>
+                      <div style={{ ...styles.small, marginTop: 4 }}>
+                        {insights.fairness.weekend_matched} / {insights.fairness.weekend_total} weekend shifts matched preference
+                      </div>
+                    </div>
+                    <details style={{ flex: "1 1 300px" }}>
+                      <summary style={{ cursor: "pointer", opacity: 0.9, fontWeight: 700 }}>Per employee</summary>
+                      <div style={{ marginTop: 8 }}>
+                        {insights.fairness.by_employee.map((e) => (
+                          <div key={e.employee_id} style={{ marginBottom: 4 }}>
+                            {e.name}: {e.matched}/{e.total_weekend_shifts} ({e.preference})
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              )}
+
+              {/* PTO acceptance */}
+              {insights.pto_acceptance && insights.pto_acceptance.total_requests > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ ...styles.sectionTitle, marginBottom: 10 }}>PTO / time-off acceptance</div>
+                  <div style={styles.dayCard}>
+                    <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                      {insights.pto_acceptance.acceptance_rate_pct != null
+                        ? `${insights.pto_acceptance.acceptance_rate_pct}%`
+                        : "—"}{" "}
+                      of requests accepted
+                    </div>
+                    <div style={{ ...styles.small }}>
+                      {insights.pto_acceptance.accepted} accepted, {insights.pto_acceptance.denied} denied (scheduled during requested off)
+                    </div>
                   </div>
                 </div>
               )}

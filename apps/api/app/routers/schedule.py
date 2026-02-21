@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import text, delete, select
+from sqlalchemy import bindparam, text, delete, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -370,7 +370,7 @@ def get_schedule_insights(
     if not run:
         raise HTTPException(status_code=404, detail="Schedule run not found")
 
-    # Each row: employee_id, name, hourly_rate, shift_date, hours, pay_week_start
+    # Each row: employee_id, name, hourly_rate, shift_date, label, start_time, end_time, hours, pay_week_start
     rows = db.execute(
         text(
             """
@@ -379,12 +379,15 @@ def get_schedule_insights(
               e.name,
               e.hourly_rate,
               ss.shift_date,
+              ss.label,
+              ss.start_time,
+              ss.end_time,
               (EXTRACT(EPOCH FROM (ss.end_time - ss.start_time)) / 3600.0)::numeric(10,2) AS hours,
               (ss.shift_date - (((EXTRACT(DOW FROM ss.shift_date)::int + 1) % 7))::int)::date AS pay_week_start
             FROM scheduled_shifts ss
             JOIN employees e ON e.employee_id = ss.employee_id
             WHERE ss.schedule_run_id = :run_id
-            ORDER BY e.name, ss.shift_date
+            ORDER BY ss.employee_id, ss.shift_date, ss.start_time
             """
         ),
         {"run_id": str(run_id)},
@@ -425,10 +428,36 @@ def get_schedule_insights(
             }
         emp_map[eid]["hours_total"] += hrs
         emp_map[eid]["hours_by_week"][week_start] = emp_map[eid]["hours_by_week"].get(week_start, 0) + hrs
+        if "shifts" not in emp_map[eid]:
+            emp_map[eid]["shifts"] = []
+        emp_map[eid]["shifts"].append({
+            "shift_date": r["shift_date"],
+            "label": r.get("label") or "",
+            "start_time": r.get("start_time"),
+            "end_time": r.get("end_time"),
+        })
 
         week_totals[week_start] = week_totals.get(week_start, 0) + hrs
 
-    # Format per_employee with payroll using employee rate or default
+    # Helper: shift type for clopen detection (open/close/mid)
+    def _shift_type(label: str, start_t, end_t) -> str:
+        if not label:
+            return "mid"
+        lu = str(label).upper()
+        if "AM" in lu or label.startswith("AM_"):
+            return "open"
+        if "PM" in lu or label.startswith("PM_"):
+            return "close"
+        if start_t and end_t:
+            start_m = start_t.hour * 60 + getattr(start_t, "minute", 0) if hasattr(start_t, "hour") else 0
+            end_m = end_t.hour * 60 + getattr(end_t, "minute", 0) if hasattr(end_t, "hour") else 0
+            if start_m < 360:
+                return "open"
+            if end_m >= 1200:
+                return "close"
+        return "mid"
+
+    # Format per_employee (drop "shifts" from output, used only for clopen) with payroll using employee rate or default
     per_employee = []
     for e in emp_map.values():
         rate_used = e["hourly_rate"] if e["hourly_rate"] is not None else default_rate
@@ -534,6 +563,180 @@ def get_schedule_insights(
             "payroll_change_pct": payroll_pct,
         }
 
+    # FT/PT target summary, clopen count, fairness, PTO acceptance
+    emp_ids_list = list(emp_map.keys())
+    ft_under_target: list = []
+    pt_over_ideal: list = []
+    clopen_count = 0
+    clopens: list = []
+
+    rules_rows = db.execute(
+        text(
+            """
+            SELECT employee_id, rule_type, value_json
+            FROM employee_rules
+            WHERE employee_id IN :emp_ids
+              AND rule_type IN ('EMPLOYMENT_TYPE', 'IDEAL_HOURS_WEEKLY', 'WEEKEND_PREFERENCE')
+              AND (effective_end IS NULL OR effective_end >= :month_end)
+              AND (effective_start IS NULL OR effective_start <= :month_start)
+            """
+        ).bindparams(bindparam("emp_ids", expanding=True)),
+        {"emp_ids": emp_ids_list, "month_start": month_start, "month_end": month_end},
+    ).mappings().all() if emp_ids_list else []
+
+    rules_by_emp: dict = {}
+    for rr in rules_rows:
+        eid = str(rr["employee_id"])
+        rules_by_emp.setdefault(eid, {})
+        v = rr["value_json"] or {}
+        if rr["rule_type"] == "EMPLOYMENT_TYPE":
+            rules_by_emp[eid]["employment_type"] = v.get("type")
+        elif rr["rule_type"] == "IDEAL_HOURS_WEEKLY":
+            h = v.get("hours")
+            rules_by_emp[eid]["ideal_hours"] = float(h) if h is not None else None
+        elif rr["rule_type"] == "WEEKEND_PREFERENCE":
+            rules_by_emp[eid]["weekend_pref"] = v.get("preference")
+
+    for e in emp_map.values():
+        eid = e["employee_id"]
+        r = rules_by_emp.get(eid, {})
+        emp_type = r.get("employment_type")
+        ideal = r.get("ideal_hours")
+
+        if emp_type == "full_time":
+            for w, h in e["hours_by_week"].items():
+                if h < 30:
+                    ft_under_target.append({
+                        "employee_id": eid,
+                        "name": e["name"],
+                        "week_start": w,
+                        "hours": round(h, 2),
+                        "target": 30,
+                    })
+                    break
+        elif emp_type == "part_time" and ideal is not None:
+            n_weeks = len(e["hours_by_week"]) or 1
+            avg_weekly = e["hours_total"] / n_weeks
+            if avg_weekly > ideal:
+                pt_over_ideal.append({
+                    "employee_id": eid,
+                    "name": e["name"],
+                    "hours_total": round(e["hours_total"], 2),
+                    "ideal_per_week": ideal,
+                    "avg_weekly": round(avg_weekly, 2),
+                })
+
+        shifts = e.get("shifts", [])
+        shifts.sort(key=lambda x: (x["shift_date"], str(x.get("start_time") or "")))
+        prev_close_date = None
+        for s in shifts:
+            st = _shift_type(s.get("label", ""), s.get("start_time"), s.get("end_time"))
+            curr_d = s["shift_date"]
+            curr_ord = curr_d.toordinal() if hasattr(curr_d, "toordinal") else 0
+            prev_ord = prev_close_date.toordinal() if prev_close_date and hasattr(prev_close_date, "toordinal") else 0
+            if st == "open" and prev_close_date is not None and (curr_ord - prev_ord) == 1:
+                clopen_count += 1
+                clopens.append({"employee_id": eid, "name": e["name"], "date": str(curr_d)[:10]})
+            if st == "close":
+                prev_close_date = curr_d
+            else:
+                prev_close_date = None
+
+    # Fairness: weekend preference match rate
+    weekend_match_total = 0
+    weekend_match_count = 0
+    fairness_by_employee: list = []
+    for e in emp_map.values():
+        pref = rules_by_emp.get(e["employee_id"], {}).get("weekend_pref")
+        if pref not in ("saturday", "sunday"):
+            continue
+        want_sat = pref == "saturday"
+        shifts = e.get("shifts", [])
+        emp_match = 0
+        emp_total = 0
+        for s in shifts:
+            d = s["shift_date"]
+            dow = (d.weekday() + 1) % 7 if hasattr(d, "weekday") else 0  # Sun=0, Sat=6
+            is_sat = dow == 6
+            is_sun = dow == 0
+            if is_sat or is_sun:
+                emp_total += 1
+                if (want_sat and is_sat) or (not want_sat and is_sun):
+                    emp_match += 1
+        if emp_total > 0:
+            weekend_match_total += emp_total
+            weekend_match_count += emp_match
+            fairness_by_employee.append({
+                "employee_id": e["employee_id"],
+                "name": e["name"],
+                "preference": pref,
+                "matched": emp_match,
+                "total_weekend_shifts": emp_total,
+            })
+    fairness = {
+        "weekend_match_rate": round(weekend_match_count / weekend_match_total, 2) if weekend_match_total else None,
+        "weekend_matched": weekend_match_count,
+        "weekend_total": weekend_match_total,
+        "by_employee": fairness_by_employee,
+    } if weekend_match_total else None
+
+    # PTO acceptance: requests where employee was NOT scheduled during the requested dates
+    pto_requests = db.execute(
+        text(
+            """
+            SELECT pto_id, employee_id, start_date, end_date FROM employee_pto
+            WHERE employee_id IN :emp_ids
+              AND end_date >= :month_start AND start_date <= :month_end
+            """
+        ).bindparams(bindparam("emp_ids", expanding=True)),
+        {"emp_ids": emp_ids_list, "month_start": month_start, "month_end": month_end},
+    ).mappings().all() if emp_ids_list else []
+
+    to_requests = db.execute(
+        text(
+            """
+            SELECT time_off_id, employee_id, start_date, end_date FROM employee_time_off
+            WHERE employee_id IN :emp_ids
+              AND end_date >= :month_start AND start_date <= :month_end
+            """
+        ).bindparams(bindparam("emp_ids", expanding=True)),
+        {"emp_ids": emp_ids_list, "month_start": month_start, "month_end": month_end},
+    ).mappings().all() if emp_ids_list else []
+
+    scheduled_dates_by_emp: dict = {}
+    for r in rows:
+        eid = str(r["employee_id"])
+        d = r["shift_date"]
+        dk = d.isoformat()[:10] if hasattr(d, "isoformat") else str(d)[:10]
+        scheduled_dates_by_emp.setdefault(eid, set()).add(dk)
+
+    pto_accepted = 0
+    pto_denied = 0
+    for req in pto_requests + to_requests:
+        eid = str(req["employee_id"])
+        start_d = req["start_date"]
+        end_d = req["end_date"]
+        sched = scheduled_dates_by_emp.get(eid, set())
+        overlap = False
+        cur = start_d
+        while cur <= end_d:
+            dk = cur.isoformat()[:10] if hasattr(cur, "isoformat") else str(cur)[:10]
+            if dk in sched:
+                overlap = True
+                break
+            cur = cur + timedelta(days=1)
+        if overlap:
+            pto_denied += 1
+        else:
+            pto_accepted += 1
+    pto_total = pto_accepted + pto_denied
+    pto_acceptance = {
+        "total_requests": pto_total,
+        "accepted": pto_accepted,
+        "denied": pto_denied,
+        "acceptance_rate_pct": round(100 * pto_accepted / pto_total, 1) if pto_total else None,
+    } if pto_total else None
+
     return {
         "run": {
             "schedule_run_id": str(run_id),
@@ -551,6 +754,12 @@ def get_schedule_insights(
         "overtime_threshold": overtime_threshold,
         "prior_month": prior_month,
         "comparison": comparison,
+        "ft_under_target": ft_under_target,
+        "pt_over_ideal": pt_over_ideal,
+        "clopen_count": clopen_count,
+        "clopens": clopens,
+        "fairness": fairness,
+        "pto_acceptance": pto_acceptance,
         "default_hourly_rate": default_rate,
     }
 

@@ -184,6 +184,7 @@ export default function ManagerSchedule() {
   const [runId, setRunId] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
 
   const [coverage, setCoverage] = useState<CoverageRow[]>([]);
   const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>([]);
@@ -310,6 +311,39 @@ export default function ManagerSchedule() {
     })();
   }, [companyId]);
 
+  // When studio is selected, load published schedule for that studio (so it "pops up" when manager logs in)
+  useEffect(() => {
+    if (!looksLikeUuid(studioId)) {
+      return;
+    }
+    (async () => {
+      try {
+        const token = localStorage.getItem("auth_token");
+        const res = await fetch(`${API_BASE}/schedules/studio/${studioId}/published`, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const runIdFromApi = data?.schedule_run_id;
+          if (runIdFromApi) {
+            setRunId(runIdFromApi);
+            if (data.month_start) setMonthStart(data.month_start.slice(0, 10));
+            if (data.month_end) setMonthEnd(data.month_end.slice(0, 10));
+            await loadCoverageForRun(runIdFromApi);
+          }
+        } else {
+          setRunId("");
+          setCoverage([]);
+          setScheduledShifts([]);
+        }
+      } catch {
+        setRunId("");
+        setCoverage([]);
+        setScheduledShifts([]);
+      }
+    })();
+  }, [studioId]);
+
   // Load employees when company changes
   useEffect(() => {
     if (!looksLikeUuid(companyId)) {
@@ -417,6 +451,29 @@ export default function ManagerSchedule() {
       setAgentError(e?.message ?? "Request failed");
     } finally {
       setAgentLoading(false);
+    }
+  }
+
+  async function publishSchedule() {
+    if (!runId) return;
+    setPublishLoading(true);
+    setMsg("");
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`${API_BASE}/schedules/${runId}/publish`, {
+        method: "POST",
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMsg(typeof data?.detail === "string" ? data.detail : `Publish failed (${res.status})`);
+        return;
+      }
+      setMsg("Published ✓ — this schedule will open by default when managers select this studio.");
+    } catch (e: any) {
+      setMsg(e?.message ?? "Publish failed");
+    } finally {
+      setPublishLoading(false);
     }
   }
 
@@ -1509,6 +1566,14 @@ export default function ManagerSchedule() {
             >
               📥 Export to Excel
             </button>
+            <button
+              style={{ ...styles.btn, background: "rgba(59,130,246,0.15)", borderColor: "rgba(59,130,246,0.4)", color: "#93c5fd" }}
+              onClick={publishSchedule}
+              disabled={publishLoading}
+              title="Make this the default schedule when managers open this studio"
+            >
+              {publishLoading ? "Publishing…" : "Publish schedule"}
+            </button>
           </>
         )}
       </div>
@@ -1589,7 +1654,7 @@ export default function ManagerSchedule() {
               background: "rgba(255,255,255,0.04)",
             }}
           >
-            <div style={{ fontWeight: 800, marginBottom: 10 }}>Ask about this schedule</div>
+            <div style={{ fontWeight: 800, marginBottom: 10 }}>Ask about this schedule or ask agent to make changes</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
               <input
                 type="text"

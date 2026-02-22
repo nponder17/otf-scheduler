@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Date, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
-from sqlalchemy.sql.sqltypes import DateTime
+from sqlalchemy.sql.sqltypes import DateTime  # noqa: F401
 
 from app.core.database import Base
 
@@ -21,3 +21,4 @@ class ScheduleRun(Base):
     month_end = Column(Date, nullable=False)
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    published_at = Column(DateTime(timezone=True), nullable=True)

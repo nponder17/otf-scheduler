@@ -327,8 +327,10 @@ export default function ManagerSchedule() {
           const runIdFromApi = data?.schedule_run_id;
           if (runIdFromApi) {
             setRunId(runIdFromApi);
-            if (data.month_start) setMonthStart(data.month_start.slice(0, 10));
-            if (data.month_end) setMonthEnd(data.month_end.slice(0, 10));
+            if (data.month_start) {
+              const [y, m] = data.month_start.slice(0, 10).split("-").map(Number);
+              setMonth(new Date(y, m - 1, 1));
+            }
             await loadCoverageForRun(runIdFromApi);
           }
         } else {

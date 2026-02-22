@@ -224,11 +224,13 @@ export default function ManagerSchedule() {
   const [defaultHourlyRate, setDefaultHourlyRate] = useState<string>("25");
   const [overtimeThreshold, setOvertimeThreshold] = useState<string>("40");
 
-  // Scheduler agent (ask)
+  // Scheduler agent (ask / act)
   const [agentQuestion, setAgentQuestion] = useState("");
   const [agentAnswer, setAgentAnswer] = useState<string | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState("");
+  const [agentProposedActions, setAgentProposedActions] = useState<Array<{ type: string; scheduled_shift_id: string; new_employee_id: string; summary: string }>>([]);
+  const [agentApplyLoading, setAgentApplyLoading] = useState(false);
 
   // Add shift modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -383,6 +385,7 @@ export default function ManagerSchedule() {
       setActiveMainTab("schedule");
       setAgentAnswer(null);
       setAgentError("");
+      setAgentProposedActions([]);
     }
   }, [runId]);
 
@@ -391,9 +394,10 @@ export default function ManagerSchedule() {
     setAgentLoading(true);
     setAgentError("");
     setAgentAnswer(null);
+    setAgentProposedActions([]);
     try {
       const token = localStorage.getItem("auth_token");
-      const res = await fetch(`${API_BASE}/schedules/${runId}/ask`, {
+      const res = await fetch(`${API_BASE}/schedules/${runId}/agent/act`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -408,10 +412,40 @@ export default function ManagerSchedule() {
         return;
       }
       setAgentAnswer(data?.answer ?? "");
+      setAgentProposedActions(Array.isArray(data?.proposed_actions) ? data.proposed_actions : []);
     } catch (e: any) {
       setAgentError(e?.message ?? "Request failed");
     } finally {
       setAgentLoading(false);
+    }
+  }
+
+  async function applyAgentActions() {
+    if (!runId || agentProposedActions.length === 0) return;
+    setAgentApplyLoading(true);
+    setAgentError("");
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`${API_BASE}/schedules/${runId}/agent/apply`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ actions: agentProposedActions }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = typeof data?.detail === "string" ? data.detail : `Apply failed (${res.status})`;
+        setAgentError(msg);
+        return;
+      }
+      setAgentProposedActions([]);
+      await loadCoverageForRun(runId);
+    } catch (e: any) {
+      setAgentError(e?.message ?? "Apply failed");
+    } finally {
+      setAgentApplyLoading(false);
     }
   }
 
@@ -1602,6 +1636,42 @@ export default function ManagerSchedule() {
                 }}
               >
                 {agentAnswer}
+              </div>
+            )}
+            {agentProposedActions.length > 0 && (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 14,
+                  borderRadius: 10,
+                  border: "1px solid rgba(100,180,255,0.35)",
+                  background: "rgba(0,80,160,0.15)",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>Proposed changes</div>
+                <ul style={{ margin: 0, paddingLeft: 20, marginBottom: 12 }}>
+                  {agentProposedActions.map((a, i) => (
+                    <li key={i} style={{ marginBottom: 4 }}>{a.summary}</li>
+                  ))}
+                </ul>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={applyAgentActions}
+                    disabled={agentApplyLoading}
+                    style={{ ...styles.btn, ...(agentApplyLoading ? styles.btnDisabled : {}) }}
+                  >
+                    {agentApplyLoading ? "Applying…" : "Apply"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentProposedActions([])}
+                    disabled={agentApplyLoading}
+                    style={{ ...styles.btn, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>

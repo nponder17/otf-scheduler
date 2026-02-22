@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import date, time, timedelta
 from uuid import UUID
@@ -40,6 +41,21 @@ class ShiftCreateRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+
+
+class AgentActRequest(BaseModel):
+    question: str
+
+
+class ProposedReassignAction(BaseModel):
+    type: str = "reassign_shift"
+    scheduled_shift_id: str
+    new_employee_id: str
+    summary: str
+
+
+class AgentApplyRequest(BaseModel):
+    actions: list[ProposedReassignAction]
 
 
 class GenerateShiftInstancesRequest(BaseModel):
@@ -1024,6 +1040,195 @@ Scheduled shifts (date, label, time, employee, hours):
         raise HTTPException(status_code=502, detail=f"Agent error: {str(e)}")
 
     return {"answer": answer}
+
+
+@router.post("/{run_id}/agent/act")
+def agent_act(
+    run_id: UUID,
+    body: AgentActRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Ask the agent; if the user requests a shift reassignment, the agent can use
+    the reassign_shift tool. Returns proposed_actions (no DB write) until the user applies.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key or not api_key.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="Scheduler agent is not configured (OPENAI_API_KEY missing).",
+        )
+
+    run = db.execute(
+        text(
+            "SELECT schedule_run_id, company_id, studio_id, month_start, month_end FROM schedule_runs WHERE schedule_run_id = :run_id"
+        ),
+        {"run_id": str(run_id)},
+    ).mappings().first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Schedule run not found")
+
+    month_start = run["month_start"]
+    month_end = run["month_end"]
+    company_id = run["company_id"]
+
+    # Shifts with IDs for tool use
+    shifts_rows = db.execute(
+        text(
+            """
+            SELECT ss.scheduled_shift_id, ss.employee_id, ss.shift_date, ss.label, ss.start_time, ss.end_time, e.name AS employee_name
+            FROM scheduled_shifts ss
+            JOIN employees e ON e.employee_id = ss.employee_id
+            WHERE ss.schedule_run_id = :run_id
+            ORDER BY ss.shift_date, ss.start_time
+            """
+        ),
+        {"run_id": str(run_id)},
+    ).mappings().all()
+
+    # Company employees for name resolution
+    company_employees = db.execute(
+        text(
+            "SELECT employee_id, name FROM employees WHERE company_id = :company_id AND is_active = true ORDER BY name"
+        ),
+        {"company_id": str(company_id)},
+    ).mappings().all()
+
+    name_to_id = {str(r["name"]).strip().lower(): str(r["employee_id"]) for r in company_employees}
+    id_to_name = {str(r["employee_id"]): str(r["name"]) for r in company_employees}
+
+    shift_lines = []
+    for r in shifts_rows:
+        d = r["shift_date"]
+        date_str = d.isoformat()[:10] if hasattr(d, "isoformat") else str(d)[:10]
+        st = r.get("start_time")
+        et = r.get("end_time")
+        st_str = str(st)[:5] if st else ""
+        et_str = str(et)[:5] if et else ""
+        label = r.get("label") or ""
+        name = r.get("employee_name") or ""
+        sid = r["scheduled_shift_id"]
+        shift_lines.append(f"  {sid}: {date_str} {label} {st_str}-{et_str} -> {name}")
+
+    employees_list = ", ".join(id_to_name.values()) if id_to_name else "(none)"
+
+    context = f"""Schedule run: {month_start} to {month_end}.
+
+Shifts (scheduled_shift_id: date label start-end -> current employee):
+{chr(10).join(shift_lines[:300])}
+"""
+    if len(shift_lines) > 300:
+        context += f"\n... and {len(shift_lines) - 300} more shifts."
+
+    context += f"\n\nEmployees in this company (use exact name for reassignment): {employees_list}"
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "reassign_shift",
+                "description": "Reassign a scheduled shift to a different employee. Use when the user asks to change who works a shift (e.g. put X on Tuesday 5:30a, move Y off Wednesday, assign Z to that shift).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "scheduled_shift_id": {"type": "string", "description": "UUID of the shift from the context list"},
+                        "new_employee_name": {"type": "string", "description": "Exact full name of the employee to assign (must be from the company employees list)"},
+                    },
+                    "required": ["scheduled_shift_id", "new_employee_name"],
+                },
+            },
+        }
+    ]
+
+    system_prompt = """You are a scheduler assistant. Use only the context provided. You can answer questions about the schedule. If the user asks to reassign a shift (change who works a given shift), call reassign_shift with the shift ID from the context and the exact employee name from the company list. Be concise. Do not make up names or shift IDs."""
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Context:\n{context}\n\nUser request: {body.question}"},
+            ],
+            tools=tools,
+            tool_choice="auto",
+            max_tokens=1024,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Agent error: {str(e)}")
+
+    message = response.choices[0].message
+    answer = (message.content or "").strip()
+    proposed_actions: list[dict] = []
+
+    if getattr(message, "tool_calls", None):
+        for tc in message.tool_calls:
+            if getattr(tc, "function", None) and getattr(tc.function, "name", None) == "reassign_shift":
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except Exception:
+                    continue
+                shift_id_str = (args.get("scheduled_shift_id") or "").strip()
+                new_name = (args.get("new_employee_name") or "").strip()
+                if not shift_id_str or not new_name:
+                    continue
+                new_employee_id = name_to_id.get(new_name.lower())
+                if not new_employee_id:
+                    continue
+                # Verify shift belongs to this run
+                shift_row = db.execute(
+                    text(
+                        "SELECT scheduled_shift_id, shift_date, label, start_time, end_time FROM scheduled_shifts WHERE schedule_run_id = :run_id AND scheduled_shift_id = :sid"
+                    ),
+                    {"run_id": str(run_id), "sid": shift_id_str},
+                ).mappings().first()
+                if not shift_row:
+                    continue
+                current_name = next((r["employee_name"] for r in shifts_rows if str(r["scheduled_shift_id"]) == shift_id_str), "?")
+                summary = f"Reassign {shift_row['shift_date']} {shift_row['label']} from {current_name} to {new_name}"
+                proposed_actions.append({
+                    "type": "reassign_shift",
+                    "scheduled_shift_id": shift_id_str,
+                    "new_employee_id": new_employee_id,
+                    "summary": summary,
+                })
+
+    return {"answer": answer, "proposed_actions": proposed_actions}
+
+
+@router.post("/{run_id}/agent/apply")
+def agent_apply(
+    run_id: UUID,
+    body: AgentApplyRequest,
+    db: Session = Depends(get_db),
+):
+    """Apply previously proposed agent actions (e.g. reassign shift)."""
+    run = db.execute(
+        text("SELECT schedule_run_id FROM schedule_runs WHERE schedule_run_id = :run_id"),
+        {"run_id": str(run_id)},
+    ).mappings().first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Schedule run not found")
+
+    applied = []
+    for action in body.actions:
+        if action.type != "reassign_shift":
+            continue
+        shift = db.get(ScheduledShift, UUID(action.scheduled_shift_id))
+        if not shift or str(shift.schedule_run_id) != str(run_id):
+            raise HTTPException(status_code=400, detail=f"Shift {action.scheduled_shift_id} not found or not in this run")
+        employee = db.execute(
+            text("SELECT employee_id, is_active FROM employees WHERE employee_id = :eid"),
+            {"eid": action.new_employee_id},
+        ).mappings().first()
+        if not employee or not employee["is_active"]:
+            raise HTTPException(status_code=400, detail=f"Employee {action.new_employee_id} not found or not active")
+        shift.employee_id = UUID(action.new_employee_id)
+        db.commit()
+        db.refresh(shift)
+        applied.append({"scheduled_shift_id": action.scheduled_shift_id, "new_employee_id": action.new_employee_id})
+
+    return {"applied": applied}
 
 
 @router.get("/{run_id}/audit/shift")

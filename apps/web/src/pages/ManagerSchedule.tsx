@@ -403,7 +403,8 @@ export default function ManagerSchedule() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setAgentError(data?.detail || `Failed (${res.status})`);
+        const msg = typeof data?.detail === "string" ? data.detail : Array.isArray(data?.detail) ? data.detail.map((d: any) => d?.msg || d).join(", ") : res.status === 404 ? "Schedule run not found. Generate or load a schedule for this month first." : `Failed (${res.status})`;
+        setAgentError(msg);
         return;
       }
       setAgentAnswer(data?.answer ?? "");

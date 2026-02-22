@@ -1,7 +1,9 @@
+import os
 from datetime import date, time, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from openai import OpenAI
 from pydantic import BaseModel
 from sqlalchemy import bindparam, text, delete, select
 from sqlalchemy.orm import Session
@@ -34,6 +36,10 @@ class ShiftCreateRequest(BaseModel):
     label: str
     start_time: str  # HH:MM
     end_time: str  # HH:MM
+
+
+class AskRequest(BaseModel):
+    question: str
 
 
 class GenerateShiftInstancesRequest(BaseModel):
@@ -762,6 +768,98 @@ def get_schedule_insights(
         "pto_acceptance": pto_acceptance,
         "default_hourly_rate": default_rate,
     }
+
+
+@router.post("/{run_id}/ask")
+def ask_schedule_agent(
+    run_id: UUID,
+    body: AskRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Ask the AI scheduler agent a question about this schedule run.
+    Uses the run's schedule and insights data as context. Requires OPENAI_API_KEY.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key or not api_key.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="Scheduler agent is not configured (OPENAI_API_KEY missing). Set it in your environment to enable.",
+        )
+
+    run = db.execute(
+        text(
+            "SELECT schedule_run_id, company_id, studio_id, month_start, month_end FROM schedule_runs WHERE schedule_run_id = :run_id"
+        ),
+        {"run_id": str(run_id)},
+    ).mappings().first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Schedule run not found")
+
+    month_start = run["month_start"]
+    month_end = run["month_end"]
+
+    shifts_rows = db.execute(
+        text(
+            """
+            SELECT ss.shift_date, ss.label, ss.start_time, ss.end_time, e.name AS employee_name,
+                   (EXTRACT(EPOCH FROM (ss.end_time - ss.start_time)) / 3600.0)::numeric(10,2) AS hours
+            FROM scheduled_shifts ss
+            JOIN employees e ON e.employee_id = ss.employee_id
+            WHERE ss.schedule_run_id = :run_id
+            ORDER BY ss.shift_date, ss.start_time
+            """
+        ),
+        {"run_id": str(run_id)},
+    ).mappings().all()
+
+    hours_by_emp: dict = {}
+    shifts_lines: list = []
+    for r in shifts_rows:
+        name = str(r["employee_name"])
+        d = r["shift_date"]
+        date_str = d.isoformat()[:10] if hasattr(d, "isoformat") else str(d)[:10]
+        label = r.get("label") or ""
+        hrs = float(r["hours"]) if r.get("hours") is not None else 0
+        hours_by_emp[name] = hours_by_emp.get(name, 0) + hrs
+        st = r.get("start_time")
+        et = r.get("end_time")
+        st_str = str(st)[:5] if st else ""
+        et_str = str(et)[:5] if et else ""
+        shifts_lines.append(f"  {date_str} {label} {st_str}-{et_str} {name} {hrs}h")
+
+    total_hours = sum(hours_by_emp.values())
+    emp_summary = "\n".join(f"  {name}: {round(h, 2)}h" for name, h in sorted(hours_by_emp.items()))
+
+    context = f"""Schedule run: {month_start} to {month_end}.
+Total hours: {round(total_hours, 2)}. Employees: {len(hours_by_emp)}.
+
+Per-employee total hours:
+{emp_summary}
+
+Scheduled shifts (date, label, time, employee, hours):
+{chr(10).join(shifts_lines[:200])}
+"""
+    if len(shifts_lines) > 200:
+        context += f"\n... and {len(shifts_lines) - 200} more shifts."
+
+    system_prompt = """You are a helpful scheduler assistant for a fitness studio. You answer questions about the schedule using only the context provided. Be concise and accurate. If the answer is not in the context, say so. Do not make up numbers or names."""
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {body.question}"},
+            ],
+            max_tokens=1024,
+        )
+        answer = (response.choices[0].message.content or "").strip()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Agent error: {str(e)}")
+
+    return {"answer": answer}
 
 
 @router.get("/{run_id}/audit/shift")

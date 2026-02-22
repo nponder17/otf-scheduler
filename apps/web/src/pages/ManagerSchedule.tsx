@@ -224,6 +224,12 @@ export default function ManagerSchedule() {
   const [defaultHourlyRate, setDefaultHourlyRate] = useState<string>("25");
   const [overtimeThreshold, setOvertimeThreshold] = useState<string>("40");
 
+  // Scheduler agent (ask)
+  const [agentQuestion, setAgentQuestion] = useState("");
+  const [agentAnswer, setAgentAnswer] = useState<string | null>(null);
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentError, setAgentError] = useState("");
+
   // Add shift modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [newShift, setNewShift] = useState({
@@ -375,8 +381,38 @@ export default function ManagerSchedule() {
     if (!runId) {
       setInsights(null);
       setActiveMainTab("schedule");
+      setAgentAnswer(null);
+      setAgentError("");
     }
   }, [runId]);
+
+  async function askAgent() {
+    if (!runId || !agentQuestion.trim()) return;
+    setAgentLoading(true);
+    setAgentError("");
+    setAgentAnswer(null);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`${API_BASE}/schedules/${runId}/ask`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ question: agentQuestion.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAgentError(data?.detail || `Failed (${res.status})`);
+        return;
+      }
+      setAgentAnswer(data?.answer ?? "");
+    } catch (e: any) {
+      setAgentError(e?.message ?? "Request failed");
+    } finally {
+      setAgentLoading(false);
+    }
+  }
 
   async function loadCoverageForRun(run: string) {
     const token = localStorage.getItem("auth_token");
@@ -1507,6 +1543,67 @@ export default function ManagerSchedule() {
           </div>
 
           {insightsError && <div style={{ color: "#ff8080", marginBottom: 12 }}>{insightsError}</div>}
+
+          {/* Scheduler agent: ask a question */}
+          <div
+            style={{
+              marginBottom: 24,
+              padding: 16,
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.04)",
+            }}
+          >
+            <div style={{ fontWeight: 800, marginBottom: 10 }}>Ask about this schedule</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+              <input
+                type="text"
+                value={agentQuestion}
+                onChange={(e) => setAgentQuestion(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && askAgent()}
+                placeholder="e.g. How many hours is Charity working? Who has overtime?"
+                disabled={agentLoading}
+                style={{
+                  flex: "1 1 260px",
+                  minWidth: 200,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#e9eaec",
+                  fontSize: 15,
+                }}
+              />
+              <button
+                type="button"
+                onClick={askAgent}
+                disabled={agentLoading || !agentQuestion.trim()}
+                style={{
+                  ...styles.btn,
+                  ...(agentLoading || !agentQuestion.trim() ? styles.btnDisabled : {}),
+                }}
+              >
+                {agentLoading ? "Thinking…" : "Ask"}
+              </button>
+            </div>
+            {agentError && <div style={{ color: "#ff8080", marginTop: 10, fontSize: 14 }}>{agentError}</div>}
+            {agentAnswer != null && agentAnswer !== "" && (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 14,
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "rgba(0,0,0,0.2)",
+                  whiteSpace: "pre-wrap",
+                  fontSize: 15,
+                  lineHeight: 1.5,
+                }}
+              >
+                {agentAnswer}
+              </div>
+            )}
+          </div>
 
           {insightsLoading && !insights && <div style={{ opacity: 0.8 }}>Loading insights…</div>}
 

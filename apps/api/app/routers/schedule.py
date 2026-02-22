@@ -802,26 +802,53 @@ def ask_schedule_agent(
     shifts_rows = db.execute(
         text(
             """
-            SELECT ss.shift_date, ss.label, ss.start_time, ss.end_time, e.name AS employee_name,
+            SELECT ss.employee_id, ss.shift_date, ss.label, ss.start_time, ss.end_time, e.name AS employee_name,
                    (EXTRACT(EPOCH FROM (ss.end_time - ss.start_time)) / 3600.0)::numeric(10,2) AS hours
             FROM scheduled_shifts ss
             JOIN employees e ON e.employee_id = ss.employee_id
             WHERE ss.schedule_run_id = :run_id
-            ORDER BY ss.shift_date, ss.start_time
+            ORDER BY ss.employee_id, ss.shift_date, ss.start_time
             """
         ),
         {"run_id": str(run_id)},
     ).mappings().all()
 
+    def _shift_type(label: str, start_t, end_t) -> str:
+        if not label:
+            return "mid"
+        lu = str(label).upper()
+        if "AM" in lu or label.startswith("AM_"):
+            return "open"
+        if "PM" in lu or label.startswith("PM_"):
+            return "close"
+        if start_t and end_t:
+            start_m = start_t.hour * 60 + getattr(start_t, "minute", 0) if hasattr(start_t, "hour") else 0
+            end_m = end_t.hour * 60 + getattr(end_t, "minute", 0) if hasattr(end_t, "hour") else 0
+            if start_m < 360:
+                return "open"
+            if end_m >= 1200:
+                return "close"
+        return "mid"
+
     hours_by_emp: dict = {}
+    hours_by_emp_week: dict = {}
     shifts_lines: list = []
+    emp_ids_set: set = set()
+    scheduled_dates_by_emp_id: dict = {}
+
     for r in shifts_rows:
+        eid = str(r["employee_id"])
         name = str(r["employee_name"])
         d = r["shift_date"]
         date_str = d.isoformat()[:10] if hasattr(d, "isoformat") else str(d)[:10]
+        emp_ids_set.add(eid)
+        scheduled_dates_by_emp_id.setdefault(eid, set()).add(date_str)
         label = r.get("label") or ""
         hrs = float(r["hours"]) if r.get("hours") is not None else 0
         hours_by_emp[name] = hours_by_emp.get(name, 0) + hrs
+        week_start = (d - timedelta(days=(d.weekday() - 5) % 7)) if hasattr(d, "weekday") else d
+        week_key = week_start.isoformat()[:10] if hasattr(week_start, "isoformat") else str(week_start)[:10]
+        hours_by_emp_week[(name, week_key)] = hours_by_emp_week.get((name, week_key), 0) + hrs
         st = r.get("start_time")
         et = r.get("end_time")
         st_str = str(st)[:5] if st else ""
@@ -843,7 +870,144 @@ Scheduled shifts (date, label, time, employee, hours):
     if len(shifts_lines) > 200:
         context += f"\n... and {len(shifts_lines) - 200} more shifts."
 
-    system_prompt = """You are a helpful scheduler assistant for a fitness studio. You answer questions about the schedule using only the context provided. Be concise and accurate. If the answer is not in the context, say so. Do not make up numbers or names."""
+    emp_ids_list = list(emp_ids_set)
+    name_by_id = {str(r["employee_id"]): str(r["employee_name"]) for r in shifts_rows}
+
+    rules_rows = db.execute(
+        text(
+            """
+            SELECT employee_id, rule_type, value_json
+            FROM employee_rules
+            WHERE employee_id IN :emp_ids
+              AND (effective_end IS NULL OR effective_end >= :month_end)
+              AND (effective_start IS NULL OR effective_start <= :month_start)
+              AND rule_type IN ('EMPLOYMENT_TYPE', 'IDEAL_HOURS_WEEKLY', 'WEEKEND_PREFERENCE')
+            """
+        ).bindparams(bindparam("emp_ids", expanding=True)),
+        {"emp_ids": emp_ids_list, "month_start": month_start, "month_end": month_end},
+    ).mappings().all() if emp_ids_list else []
+
+    rules_by_emp = {}
+    for rr in rules_rows:
+        eid = str(rr["employee_id"])
+        rules_by_emp.setdefault(eid, {})
+        v = rr["value_json"] or {}
+        if rr["rule_type"] == "EMPLOYMENT_TYPE":
+            rules_by_emp[eid]["employment_type"] = v.get("type")
+        elif rr["rule_type"] == "IDEAL_HOURS_WEEKLY":
+            h = v.get("hours")
+            rules_by_emp[eid]["ideal_hours"] = float(h) if h is not None else None
+        elif rr["rule_type"] == "WEEKEND_PREFERENCE":
+            rules_by_emp[eid]["weekend_pref"] = v.get("preference")
+
+    overtime_threshold = 40
+    overtime_lines = [f"  {name} week {wk}: {round(h, 2)}h (>= {overtime_threshold})" for (name, wk), h in hours_by_emp_week.items() if h >= overtime_threshold]
+
+    ft_under_lines = []
+    pt_over_lines = []
+    for eid in emp_ids_list:
+        name = name_by_id.get(eid, eid)
+        r = rules_by_emp.get(eid, {})
+        if r.get("employment_type") == "full_time":
+            for (n, wk), h in hours_by_emp_week.items():
+                if n == name and h < 30:
+                    ft_under_lines.append(f"  {name} week {wk}: {round(h, 2)}h (FT target 30)")
+                    break
+        elif r.get("employment_type") == "part_time" and r.get("ideal_hours") is not None:
+            ideal = r["ideal_hours"]
+            n_weeks = len([w for (n, w) in hours_by_emp_week if n == name]) or 1
+            total = hours_by_emp.get(name, 0)
+            if total / n_weeks > ideal:
+                pt_over_lines.append(f"  {name}: {round(total, 2)}h total, {round(total / n_weeks, 2)}h/week (ideal {ideal})")
+
+    shifts_by_emp = {}
+    for r in shifts_rows:
+        eid = str(r["employee_id"])
+        shifts_by_emp.setdefault(eid, []).append(r)
+    clopen_lines = []
+    for eid, emp_shifts in shifts_by_emp.items():
+        emp_shifts.sort(key=lambda x: (x["shift_date"], str(x.get("start_time") or "")))
+        prev_close_date = None
+        for s in emp_shifts:
+            st = _shift_type(s.get("label", ""), s.get("start_time"), s.get("end_time"))
+            curr_d = s["shift_date"]
+            curr_ord = curr_d.toordinal() if hasattr(curr_d, "toordinal") else 0
+            prev_ord = prev_close_date.toordinal() if prev_close_date and hasattr(prev_close_date, "toordinal") else 0
+            if st == "open" and prev_close_date is not None and (curr_ord - prev_ord) == 1:
+                clopen_lines.append(f"  {name_by_id.get(eid, eid)} on {str(curr_d)[:10]}")
+            prev_close_date = curr_d if st == "close" else None
+
+    weekend_match_total = 0
+    weekend_match_count = 0
+    fairness_lines = []
+    for eid in emp_ids_list:
+        name = name_by_id.get(eid, eid)
+        pref = rules_by_emp.get(eid, {}).get("weekend_pref")
+        if pref not in ("saturday", "sunday"):
+            continue
+        want_sat = pref == "saturday"
+        total_wknd = matched = 0
+        for s in shifts_by_emp.get(eid, []):
+            d = s["shift_date"]
+            dow = (d.weekday() + 1) % 7 if hasattr(d, "weekday") else 0
+            if dow == 6 or dow == 0:
+                total_wknd += 1
+                if (want_sat and dow == 6) or (not want_sat and dow == 0):
+                    matched += 1
+        if total_wknd > 0:
+            weekend_match_total += total_wknd
+            weekend_match_count += matched
+            fairness_lines.append(f"  {name}: {matched}/{total_wknd} ({pref})")
+
+    pto_requests = db.execute(
+        text("SELECT employee_id, start_date, end_date FROM employee_pto WHERE employee_id IN :emp_ids AND end_date >= :month_start AND start_date <= :month_end").bindparams(bindparam("emp_ids", expanding=True)),
+        {"emp_ids": emp_ids_list, "month_start": month_start, "month_end": month_end},
+    ).mappings().all() if emp_ids_list else []
+    to_requests = db.execute(
+        text("SELECT employee_id, start_date, end_date FROM employee_time_off WHERE employee_id IN :emp_ids AND end_date >= :month_start AND start_date <= :month_end").bindparams(bindparam("emp_ids", expanding=True)),
+        {"emp_ids": emp_ids_list, "month_start": month_start, "month_end": month_end},
+    ).mappings().all() if emp_ids_list else []
+    pto_accepted = pto_denied = 0
+    for req in pto_requests + to_requests:
+        eid = str(req["employee_id"])
+        start_d, end_d = req["start_date"], req["end_date"]
+        sched = scheduled_dates_by_emp_id.get(eid, set())
+        cur = start_d
+        overlap = False
+        while cur <= end_d:
+            dk = cur.isoformat()[:10] if hasattr(cur, "isoformat") else str(cur)[:10]
+            if dk in sched:
+                overlap = True
+                break
+            cur = cur + timedelta(days=1)
+        if overlap:
+            pto_denied += 1
+        else:
+            pto_accepted += 1
+    pto_total = pto_accepted + pto_denied
+    pto_rate = round(100 * pto_accepted / pto_total, 1) if pto_total else None
+
+    insights_parts = []
+    if overtime_lines:
+        insights_parts.append("Overtime (>= 40h in a pay week):\n" + "\n".join(overtime_lines))
+    if ft_under_lines:
+        insights_parts.append("FT under 30h/week:\n" + "\n".join(ft_under_lines))
+    if pt_over_lines:
+        insights_parts.append("PT over ideal hours:\n" + "\n".join(pt_over_lines))
+    if clopen_lines:
+        insights_parts.append("Clopens (close then next-day open):\n" + "\n".join(clopen_lines))
+    if fairness_lines:
+        rate = round(100 * weekend_match_count / weekend_match_total, 1) if weekend_match_total else 0
+        insights_parts.append(f"Weekend preference match {rate}%:\n" + "\n".join(fairness_lines))
+    if pto_total:
+        insights_parts.append(f"PTO/time-off: {pto_accepted} accepted, {pto_denied} denied ({pto_rate}% acceptance)")
+
+    if insights_parts:
+        context += "\n\n--- Insights ---\n" + "\n\n".join(insights_parts)
+
+    context += "\n\n--- Rules ---\nFT target >= 30h per pay week; PT have ideal hours; one weekend day per pay week; match weekend preference when possible; avoid clopens (close then open next day); honor PTO/time-off."
+
+    system_prompt = """You are a scheduler assistant for a fitness studio. Use only the context provided. Answer questions about the schedule and, when asked, suggest concrete improvements (rebalance hours, fix overtime, reduce clopens, improve weekend fairness, honor PTO). Be concise and accurate. If something is not in the context, say so. Do not make up names, dates, or numbers."""
 
     try:
         client = OpenAI(api_key=api_key)

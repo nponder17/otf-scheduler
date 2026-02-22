@@ -229,7 +229,7 @@ export default function ManagerSchedule() {
   const [agentAnswer, setAgentAnswer] = useState<string | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState("");
-  const [agentProposedActions, setAgentProposedActions] = useState<Array<{ type: string; scheduled_shift_id: string; new_employee_id: string; summary: string }>>([]);
+  const [agentProposedActions, setAgentProposedActions] = useState<Array<{ type: string; summary: string; [key: string]: unknown }>>([]);
   const [agentApplyLoading, setAgentApplyLoading] = useState(false);
 
   // Add shift modal state

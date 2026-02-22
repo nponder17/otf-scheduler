@@ -54,8 +54,27 @@ class ProposedReassignAction(BaseModel):
     summary: str
 
 
+class ProposedUpdateShiftTimesAction(BaseModel):
+    type: str = "update_shift_times"
+    scheduled_shift_id: str
+    new_start_time: str
+    new_end_time: str
+    new_label: str | None = None
+    summary: str
+
+
+class ProposedAddShiftAction(BaseModel):
+    type: str = "add_shift"
+    employee_id: str
+    shift_date: str  # YYYY-MM-DD
+    start_time: str
+    end_time: str
+    label: str
+    summary: str
+
+
 class AgentApplyRequest(BaseModel):
-    actions: list[ProposedReassignAction]
+    actions: list[ProposedReassignAction | ProposedUpdateShiftTimesAction | ProposedAddShiftAction]
 
 
 class GenerateShiftInstancesRequest(BaseModel):
@@ -1137,10 +1156,49 @@ Shifts (scheduled_shift_id: date label start-end -> current employee):
                     "required": ["scheduled_shift_id", "new_employee_name"],
                 },
             },
-        }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_shift_times",
+                "description": "Change the start and/or end time (and optionally label) of an existing scheduled shift. Use when the user asks to change someone's shift time (e.g. change Charity's Tuesday shift from 5:30 to 6:30 start, or move a shift later).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "scheduled_shift_id": {"type": "string", "description": "UUID of the shift from the context list"},
+                        "new_start_time": {"type": "string", "description": "New start time in 24h format HH:MM or HH:MM:SS (e.g. 06:30 for 6:30am)"},
+                        "new_end_time": {"type": "string", "description": "New end time in 24h format HH:MM or HH:MM:SS"},
+                        "new_label": {"type": "string", "description": "Optional new label for the shift (e.g. 6:30a-2:30p)"},
+                    },
+                    "required": ["scheduled_shift_id", "new_start_time", "new_end_time"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "add_shifts",
+                "description": "Add new shifts for an employee on specified days. Use when the user asks to add someone to the schedule on days they are not yet on (e.g. add Jaylen Monday Tuesday Wednesday Friday 8am-4pm). Days are day names; times in 24h HH:MM. Creates one shift per day in the schedule month.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "employee_name": {"type": "string", "description": "Exact full name of the employee (from company employees list)"},
+                        "days": {"type": "array", "items": {"type": "string"}, "description": "Day names: monday, tuesday, wednesday, thursday, friday, saturday, sunday (can repeat for multiple weeks)"},
+                        "start_time": {"type": "string", "description": "Start time 24h HH:MM (e.g. 08:00 for 8am)"},
+                        "end_time": {"type": "string", "description": "End time 24h HH:MM (e.g. 16:00 for 4pm)"},
+                        "label": {"type": "string", "description": "Short label for the shift (e.g. 8am-4pm)"},
+                    },
+                    "required": ["employee_name", "days", "start_time", "end_time"],
+                },
+            },
+        },
     ]
 
-    system_prompt = """You are a scheduler assistant. Use only the context provided. You can answer questions about the schedule. If the user asks to reassign a shift (change who works a given shift), call reassign_shift with the shift ID from the context and the exact employee name from the company list. Be concise. Do not make up names or shift IDs."""
+    system_prompt = """You are a scheduler assistant. Use only the context provided. You can answer questions about the schedule.
+- To reassign a shift to another employee: use reassign_shift with shift ID and new employee name.
+- To change an existing shift's start/end time (e.g. change 5:30 to 6:30): use update_shift_times with shift ID and new_start_time, new_end_time (24h HH:MM).
+- To add new shifts for an employee on specific days (e.g. add Jaylen Mon Tue Wed Fri 8am-4pm): use add_shifts with employee_name, days list (monday, tuesday, ...), start_time, end_time, and label.
+Be concise. Use only shift IDs and names from the context."""
 
     try:
         client = OpenAI(api_key=api_key)
@@ -1161,13 +1219,28 @@ Shifts (scheduled_shift_id: date label start-end -> current employee):
     answer = (message.content or "").strip()
     proposed_actions: list[dict] = []
 
+    def parse_time_safe(t: str) -> time | None:
+        if not t or not isinstance(t, str):
+            return None
+        t = t.strip()
+        if len(t) == 5 and ":" in t:
+            t = t + ":00"
+        try:
+            return time.fromisoformat(t)
+        except ValueError:
+            return None
+
     if getattr(message, "tool_calls", None):
         for tc in message.tool_calls:
-            if getattr(tc, "function", None) and getattr(tc.function, "name", None) == "reassign_shift":
-                try:
-                    args = json.loads(tc.function.arguments or "{}")
-                except Exception:
-                    continue
+            if not getattr(tc, "function", None):
+                continue
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except Exception:
+                continue
+            fname = getattr(tc.function, "name", None)
+
+            if fname == "reassign_shift":
                 shift_id_str = (args.get("scheduled_shift_id") or "").strip()
                 new_name = (args.get("new_employee_name") or "").strip()
                 if not shift_id_str or not new_name:
@@ -1175,7 +1248,6 @@ Shifts (scheduled_shift_id: date label start-end -> current employee):
                 new_employee_id = name_to_id.get(new_name.lower())
                 if not new_employee_id:
                     continue
-                # Verify shift belongs to this run
                 shift_row = db.execute(
                     text(
                         "SELECT scheduled_shift_id, shift_date, label, start_time, end_time FROM scheduled_shifts WHERE schedule_run_id = :run_id AND scheduled_shift_id = :sid"
@@ -1193,7 +1265,81 @@ Shifts (scheduled_shift_id: date label start-end -> current employee):
                     "summary": summary,
                 })
 
+            elif fname == "update_shift_times":
+                shift_id_str = (args.get("scheduled_shift_id") or "").strip()
+                new_st = (args.get("new_start_time") or "").strip()
+                new_et = (args.get("new_end_time") or "").strip()
+                new_label = (args.get("new_label") or "").strip() or None
+                if not shift_id_str or not new_st or not new_et or parse_time_safe(new_st) is None or parse_time_safe(new_et) is None:
+                    continue
+                shift_row = db.execute(
+                    text(
+                        "SELECT scheduled_shift_id, shift_date, label, start_time, end_time FROM scheduled_shifts WHERE schedule_run_id = :run_id AND scheduled_shift_id = :sid"
+                    ),
+                    {"run_id": str(run_id), "sid": shift_id_str},
+                ).mappings().first()
+                if not shift_row:
+                    continue
+                current_name = next((r["employee_name"] for r in shifts_rows if str(r["scheduled_shift_id"]) == shift_id_str), "?")
+                summary = f"Change {current_name} {shift_row['shift_date']} to {new_st}-{new_et}" + (f" (label: {new_label})" if new_label else "")
+                proposed_actions.append({
+                    "type": "update_shift_times",
+                    "scheduled_shift_id": shift_id_str,
+                    "new_start_time": new_st,
+                    "new_end_time": new_et,
+                    "new_label": new_label,
+                    "summary": summary,
+                })
+
+            elif fname == "add_shifts":
+                emp_name = (args.get("employee_name") or "").strip()
+                days_raw = args.get("days")
+                start_t = (args.get("start_time") or "").strip()
+                end_t = (args.get("end_time") or "").strip()
+                label = (args.get("label") or "").strip() or f"{start_t}-{end_t}"
+                if not emp_name or not days_raw or not start_t or not end_t:
+                    continue
+                emp_id = name_to_id.get(emp_name.lower())
+                if not emp_id:
+                    continue
+                if parse_time_safe(start_t) is None or parse_time_safe(end_t) is None:
+                    continue
+                day_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
+                day_nums = set()
+                for d in days_raw if isinstance(days_raw, list) else [days_raw]:
+                    s = (d or "").strip().lower()
+                    if s in day_map:
+                        day_nums.add(day_map[s])
+                if not day_nums:
+                    continue
+                # All dates in run range that match the requested weekdays
+                cur = month_start
+                while cur <= month_end:
+                    if cur.weekday() in day_nums:
+                        date_str = cur.isoformat()[:10]
+                        summary = f"Add {emp_name} {date_str} {label} ({start_t}-{end_t})"
+                        proposed_actions.append({
+                            "type": "add_shift",
+                            "employee_id": emp_id,
+                            "shift_date": date_str,
+                            "start_time": start_t,
+                            "end_time": end_t,
+                            "label": label,
+                            "summary": summary,
+                        })
+                    cur = cur + timedelta(days=1)
+
     return {"answer": answer, "proposed_actions": proposed_actions}
+
+
+def _parse_time_for_apply(time_str: str) -> time:
+    s = (time_str or "").strip()
+    if len(s) == 5 and ":" in s:
+        s = s + ":00"
+    try:
+        return time.fromisoformat(s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid time format: {time_str}. Use HH:MM or HH:MM:SS")
 
 
 @router.post("/{run_id}/agent/apply")
@@ -1202,9 +1348,9 @@ def agent_apply(
     body: AgentApplyRequest,
     db: Session = Depends(get_db),
 ):
-    """Apply previously proposed agent actions (e.g. reassign shift)."""
+    """Apply previously proposed agent actions (reassign, update times, add shift)."""
     run = db.execute(
-        text("SELECT schedule_run_id FROM schedule_runs WHERE schedule_run_id = :run_id"),
+        text("SELECT schedule_run_id, studio_id FROM schedule_runs WHERE schedule_run_id = :run_id"),
         {"run_id": str(run_id)},
     ).mappings().first()
     if not run:
@@ -1212,21 +1358,66 @@ def agent_apply(
 
     applied = []
     for action in body.actions:
-        if action.type != "reassign_shift":
-            continue
-        shift = db.get(ScheduledShift, UUID(action.scheduled_shift_id))
-        if not shift or str(shift.schedule_run_id) != str(run_id):
-            raise HTTPException(status_code=400, detail=f"Shift {action.scheduled_shift_id} not found or not in this run")
-        employee = db.execute(
-            text("SELECT employee_id, is_active FROM employees WHERE employee_id = :eid"),
-            {"eid": action.new_employee_id},
-        ).mappings().first()
-        if not employee or not employee["is_active"]:
-            raise HTTPException(status_code=400, detail=f"Employee {action.new_employee_id} not found or not active")
-        shift.employee_id = UUID(action.new_employee_id)
-        db.commit()
-        db.refresh(shift)
-        applied.append({"scheduled_shift_id": action.scheduled_shift_id, "new_employee_id": action.new_employee_id})
+        if action.type == "reassign_shift":
+            a = action  # type: ProposedReassignAction
+            shift = db.get(ScheduledShift, UUID(a.scheduled_shift_id))
+            if not shift or str(shift.schedule_run_id) != str(run_id):
+                raise HTTPException(status_code=400, detail=f"Shift {a.scheduled_shift_id} not found or not in this run")
+            employee = db.execute(
+                text("SELECT employee_id, is_active FROM employees WHERE employee_id = :eid"),
+                {"eid": a.new_employee_id},
+            ).mappings().first()
+            if not employee or not employee["is_active"]:
+                raise HTTPException(status_code=400, detail=f"Employee {a.new_employee_id} not found or not active")
+            shift.employee_id = UUID(a.new_employee_id)
+            db.commit()
+            db.refresh(shift)
+            applied.append({"type": "reassign_shift", "scheduled_shift_id": a.scheduled_shift_id, "new_employee_id": a.new_employee_id})
+
+        elif action.type == "update_shift_times":
+            a = action  # type: ProposedUpdateShiftTimesAction
+            shift = db.get(ScheduledShift, UUID(a.scheduled_shift_id))
+            if not shift or str(shift.schedule_run_id) != str(run_id):
+                raise HTTPException(status_code=400, detail=f"Shift {a.scheduled_shift_id} not found or not in this run")
+            shift.start_time = _parse_time_for_apply(a.new_start_time)
+            shift.end_time = _parse_time_for_apply(a.new_end_time)
+            if a.new_label is not None and a.new_label.strip():
+                shift.label = a.new_label.strip()
+            db.commit()
+            db.refresh(shift)
+            applied.append({"type": "update_shift_times", "scheduled_shift_id": a.scheduled_shift_id})
+
+        elif action.type == "add_shift":
+            a = action  # type: ProposedAddShiftAction
+            shift_date_obj = date.fromisoformat(a.shift_date)
+            employee = db.execute(
+                text("SELECT employee_id, is_active, company_id FROM employees WHERE employee_id = :eid"),
+                {"eid": a.employee_id},
+            ).mappings().first()
+            if not employee or not employee["is_active"]:
+                raise HTTPException(status_code=400, detail=f"Employee {a.employee_id} not found or not active")
+            run_check = db.execute(
+                text("SELECT company_id FROM schedule_runs WHERE schedule_run_id = :run_id"),
+                {"run_id": str(run_id)},
+            ).mappings().first()
+            if run_check and str(employee["company_id"]) != str(run_check["company_id"]):
+                raise HTTPException(status_code=400, detail="Employee does not belong to this company")
+            python_dow = shift_date_obj.weekday()
+            day_of_week = (python_dow + 1) % 7
+            new_shift = ScheduledShift(
+                schedule_run_id=run_id,
+                employee_id=UUID(a.employee_id),
+                studio_id=run["studio_id"],
+                shift_date=shift_date_obj,
+                day_of_week=day_of_week,
+                label=a.label,
+                start_time=_parse_time_for_apply(a.start_time),
+                end_time=_parse_time_for_apply(a.end_time),
+            )
+            db.add(new_shift)
+            db.commit()
+            db.refresh(new_shift)
+            applied.append({"type": "add_shift", "scheduled_shift_id": str(new_shift.scheduled_shift_id), "shift_date": a.shift_date})
 
     return {"applied": applied}
 

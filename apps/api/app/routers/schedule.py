@@ -1161,18 +1161,36 @@ Shifts (scheduled_shift_id: date label start-end -> current employee):
             "type": "function",
             "function": {
                 "name": "update_shift_times",
-                "description": "Change the start and/or end time (and optionally label) of an existing scheduled shift. When the user asks for a specific day (e.g. 'Tuesday start times'), you MUST pass day_of_week so only that day's shifts are changed. Only pass shift IDs for the employee and day they asked about.",
+                "description": "Change the start and/or end time of ONE existing scheduled shift. Use only for a single shift ID when the user refers to one specific shift.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "scheduled_shift_id": {"type": "string", "description": "UUID of the shift from the context list"},
                         "expected_employee_name": {"type": "string", "description": "Exact name of the employee whose shift this is (from context). Required when the user named a specific person."},
-                        "day_of_week": {"type": "string", "description": "When the user asked for a specific day, pass exactly one of: monday, tuesday, wednesday, thursday, friday, saturday, sunday. Backend will only accept shifts on that weekday. Required when user says e.g. 'Tuesday shifts' or 'Mondays'."},
+                        "day_of_week": {"type": "string", "description": "When the user asked for a specific day, pass exactly one of: monday, tuesday, wednesday, thursday, friday, saturday, sunday. Backend will only accept shifts on that weekday."},
                         "new_start_time": {"type": "string", "description": "New start time in 24h format HH:MM or HH:MM:SS (e.g. 06:30 for 6:30am)"},
                         "new_end_time": {"type": "string", "description": "New end time in 24h format HH:MM or HH:MM:SS"},
                         "new_label": {"type": "string", "description": "Optional new label for the shift (e.g. 6:30a-2:30p)"},
                     },
                     "required": ["scheduled_shift_id", "expected_employee_name", "new_start_time", "new_end_time"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_shift_times_for_day",
+                "description": "Change start/end times for ALL of an employee's shifts on a given weekday for the month (e.g. every Tuesday). Use when the user says 'every Tuesday', 'all Tuesdays', 'Tuesdays for the month', 'every Monday', etc. One call updates every matching shift.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "expected_employee_name": {"type": "string", "description": "Exact full name of the employee (from context)."},
+                        "day_of_week": {"type": "string", "description": "One of: monday, tuesday, wednesday, thursday, friday, saturday, sunday"},
+                        "new_start_time": {"type": "string", "description": "New start time 24h HH:MM (e.g. 06:30 for 6:30am)"},
+                        "new_end_time": {"type": "string", "description": "New end time 24h HH:MM"},
+                        "new_label": {"type": "string", "description": "Optional label (e.g. 6:30a-1:30p)"},
+                    },
+                    "required": ["expected_employee_name", "day_of_week", "new_start_time", "new_end_time"],
                 },
             },
         },
@@ -1198,7 +1216,7 @@ Shifts (scheduled_shift_id: date label start-end -> current employee):
 
     system_prompt = """You are a scheduler assistant. Use only the context provided. You can answer questions about the schedule.
 - To reassign a shift to another employee: use reassign_shift with shift ID and new employee name.
-- To change an existing shift's start/end time: use update_shift_times. Always pass expected_employee_name. When the user asks for a specific day (e.g. Tuesday), pass day_of_week (e.g. tuesday) so only that weekday is changed.
+- To change one shift's time: use update_shift_times with that shift ID. For 'every Tuesday' or 'all Tuesdays for the month' for one person: use update_shift_times_for_day with expected_employee_name, day_of_week (e.g. tuesday), new_start_time, new_end_time — one call updates every matching shift.
 - To add new shifts for an employee on specific days (e.g. add Jaylen Mon Tue Wed Fri 8am-4pm): use add_shifts with employee_name, days list (monday, tuesday, ...), start_time, end_time, and label.
 Be concise. Use only shift IDs and names from the context."""
 
@@ -1306,6 +1324,43 @@ Be concise. Use only shift IDs and names from the context."""
                     "new_label": new_label,
                     "summary": summary,
                 })
+
+            elif fname == "update_shift_times_for_day":
+                expected_name = (args.get("expected_employee_name") or "").strip()
+                day_of_week_arg = (args.get("day_of_week") or "").strip().lower()
+                new_st = (args.get("new_start_time") or "").strip()
+                new_et = (args.get("new_end_time") or "").strip()
+                new_label = (args.get("new_label") or "").strip() or None
+                if not expected_name or not day_of_week_arg or not new_st or not new_et:
+                    continue
+                if parse_time_safe(new_st) is None or parse_time_safe(new_et) is None:
+                    continue
+                weekday_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
+                expected_weekday = weekday_map.get(day_of_week_arg)
+                if expected_weekday is None:
+                    continue
+                expected_lower = expected_name.lower()
+                for r in shifts_rows:
+                    emp_name = (r.get("employee_name") or "").strip()
+                    if emp_name.lower() != expected_lower:
+                        continue
+                    shift_d = r.get("shift_date")
+                    if shift_d is None or not hasattr(shift_d, "weekday"):
+                        continue
+                    if shift_d.weekday() != expected_weekday:
+                        continue
+                    sid = str(r.get("scheduled_shift_id") or "")
+                    if not sid:
+                        continue
+                    summary = f"Change {emp_name} {shift_d} to {new_st}-{new_et}" + (f" (label: {new_label})" if new_label else "")
+                    proposed_actions.append({
+                        "type": "update_shift_times",
+                        "scheduled_shift_id": sid,
+                        "new_start_time": new_st,
+                        "new_end_time": new_et,
+                        "new_label": new_label,
+                        "summary": summary,
+                    })
 
             elif fname == "add_shifts":
                 emp_name = (args.get("employee_name") or "").strip()

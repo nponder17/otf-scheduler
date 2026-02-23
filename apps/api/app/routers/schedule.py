@@ -228,6 +228,55 @@ def generate_schedule(req: ScheduleGenerateRequest, db: Session = Depends(get_db
     }
 
 
+@router.get("/company/{company_id}/runs")
+def list_schedule_runs(company_id: UUID, db: Session = Depends(get_db)):
+    """List all schedule runs for a company, ordered by most recent first. Includes published_at."""
+    runs = db.execute(
+        text(
+            """
+            SELECT 
+              sr.schedule_run_id,
+              sr.company_id,
+              sr.studio_id,
+              s.name AS studio_name,
+              sr.month_start,
+              sr.month_end,
+              sr.created_at,
+              sr.published_at,
+              COUNT(ss.scheduled_shift_id) AS shift_count
+            FROM schedule_runs sr
+            LEFT JOIN studios s ON s.studio_id = sr.studio_id
+            LEFT JOIN scheduled_shifts ss ON ss.schedule_run_id = sr.schedule_run_id
+            WHERE sr.company_id = :company_id
+            GROUP BY sr.schedule_run_id, sr.company_id, sr.studio_id, s.name, sr.month_start, sr.month_end, sr.created_at, sr.published_at
+            ORDER BY sr.created_at DESC
+            """
+        ),
+        {"company_id": str(company_id)},
+    ).mappings().all()
+    return {"runs": [dict(r) for r in runs]}
+
+
+@router.get("/studio/{studio_id}/published")
+def get_published_run(studio_id: UUID, db: Session = Depends(get_db)):
+    """Return the published schedule run for this studio, if any. Used to auto-load when manager selects studio."""
+    row = db.execute(
+        text(
+            """
+            SELECT schedule_run_id, company_id, studio_id, month_start, month_end, created_at, published_at
+            FROM schedule_runs
+            WHERE studio_id = :studio_id AND published_at IS NOT NULL
+            ORDER BY published_at DESC
+            LIMIT 1
+            """
+        ),
+        {"studio_id": str(studio_id)},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No published schedule for this studio")
+    return dict(row)
+
+
 @router.get("/{run_id}")
 def get_schedule(run_id: UUID, db: Session = Depends(get_db)):
     run = db.execute(
@@ -1584,56 +1633,6 @@ def get_schedule_for_employee(run_id: UUID, employee_id: UUID, db: Session = Dep
         "employee_id": str(employee_id),
         "shifts": [dict(r) for r in rows],
     }
-
-
-@router.get("/company/{company_id}/runs")
-def list_schedule_runs(company_id: UUID, db: Session = Depends(get_db)):
-    """List all schedule runs for a company, ordered by most recent first. Includes published_at."""
-    runs = db.execute(
-        text(
-            """
-            SELECT 
-              sr.schedule_run_id,
-              sr.company_id,
-              sr.studio_id,
-              s.name AS studio_name,
-              sr.month_start,
-              sr.month_end,
-              sr.created_at,
-              sr.published_at,
-              COUNT(ss.scheduled_shift_id) AS shift_count
-            FROM schedule_runs sr
-            LEFT JOIN studios s ON s.studio_id = sr.studio_id
-            LEFT JOIN scheduled_shifts ss ON ss.schedule_run_id = sr.schedule_run_id
-            WHERE sr.company_id = :company_id
-            GROUP BY sr.schedule_run_id, sr.company_id, sr.studio_id, s.name, sr.month_start, sr.month_end, sr.created_at, sr.published_at
-            ORDER BY sr.created_at DESC
-            """
-        ),
-        {"company_id": str(company_id)},
-    ).mappings().all()
-
-    return {"runs": [dict(r) for r in runs]}
-
-
-@router.get("/studio/{studio_id}/published")
-def get_published_run(studio_id: UUID, db: Session = Depends(get_db)):
-    """Return the published schedule run for this studio, if any. Used to auto-load when manager selects studio."""
-    row = db.execute(
-        text(
-            """
-            SELECT schedule_run_id, company_id, studio_id, month_start, month_end, created_at, published_at
-            FROM schedule_runs
-            WHERE studio_id = :studio_id AND published_at IS NOT NULL
-            ORDER BY published_at DESC
-            LIMIT 1
-            """
-        ),
-        {"studio_id": str(studio_id)},
-    ).mappings().first()
-    if not row:
-        raise HTTPException(status_code=404, detail="No published schedule for this studio")
-    return dict(row)
 
 
 @router.post("/{run_id}/publish")
